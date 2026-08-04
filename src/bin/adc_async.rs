@@ -28,8 +28,6 @@ async fn main(_spawner: Spawner) {
     }
 }
 
-bind_interrupts!(
-    struct Irqs {
-        ADC_IRQ_FIFO => adc::InterruptHandler;
-    }
-);
+bind_interrupts!(struct Irqs {
+    ADC_IRQ_FIFO => adc::InterruptHandler;
+});
