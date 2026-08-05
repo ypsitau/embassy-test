@@ -9,6 +9,10 @@ use embassy_rp::gpio;
 use embassy_time::{Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
+bind_interrupts!(struct Irqs {
+    ADC_IRQ_FIFO => adc::InterruptHandler;
+});
+
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
@@ -27,7 +31,3 @@ async fn main(_spawner: Spawner) {
         Timer::after(Duration::from_secs(1)).await;
     }
 }
-
-bind_interrupts!(struct Irqs {
-    ADC_IRQ_FIFO => adc::InterruptHandler;
-});

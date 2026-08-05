@@ -16,9 +16,9 @@ async fn main(_spawner: Spawner) {
         let config = uart::Config::default();
         uart::Uart::new_blocking(p.UART0, tx, rx, config)
     };
-    expect!(uart.blocking_write("Hello World!\r\n".as_bytes()));
+    expect!(uart.blocking_write(b"Hello World!\r\n"));
     loop {
-        expect!(uart.blocking_write("hello there!\r\n".as_bytes()));
+        expect!(uart.blocking_write(b"hello there!\r\n"));
         Timer::after(Duration::from_secs(1)).await;
     }
 }
