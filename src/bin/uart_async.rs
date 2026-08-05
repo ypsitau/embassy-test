@@ -4,6 +4,7 @@
 use defmt::expect;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
+use embassy_rp::dma;
 use embassy_rp::peripherals;
 use embassy_rp::uart;
 use embassy_time::{Duration, Timer};
@@ -29,4 +30,5 @@ async fn main(_spawner: Spawner) {
 
 bind_interrupts!(struct Irqs {
     UART0_IRQ => uart::InterruptHandler<peripherals::UART0>;
+    DMA_IRQ_0 => dma::InterruptHandler<peripherals::DMA_CH0>, dma::InterruptHandler<peripherals::DMA_CH1>;
 });
