@@ -6,7 +6,7 @@ use embassy_executor::Spawner;
 use embassy_rp::adc;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio;
-use embassy_time::Timer;
+use embassy_time::{Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
 #[embassy_executor::main]
@@ -24,7 +24,7 @@ async fn main(_spawner: Spawner) {
             "ch0: {:03x} ch1: {:03x} ch2: {:03x}",
             value_ch0, value_ch1, value_ch2
         );
-        Timer::after_secs(1).await;
+        Timer::after(Duration::from_secs(1)).await;
     }
 }
 
