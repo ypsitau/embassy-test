@@ -6,8 +6,8 @@
     "editor.formatOnSave": false,
     "editor.formatOnType": false,
     "editor.codeActionsOnSave": {
-      "source.fixAll": false,
-      "source.organizeImports": false
+      "source.fixAll": "never",
+      "source.organizeImports": "never"
     }
   },
   "files.exclude": {
