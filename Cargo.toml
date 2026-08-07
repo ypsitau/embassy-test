@@ -27,6 +27,7 @@ embassy-sync = "0.8.0"
 embassy-time = { version = "0.5.1" }
 embedded-graphics = "0.8.2"
 embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
+embedded-hal-async = { version = "1.0.0", features = ["defmt-03"] }
 embedded-io-async = "0.7"
 heapless = "0.9.3"
 mipidsi = "0.10.0"
