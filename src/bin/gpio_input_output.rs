@@ -14,7 +14,7 @@ struct Context<'d> {
 }
 
 impl<'d> Context<'d> {
-    fn new(pin_led: Peri<'d, gpio::AnyPin>, pin_button: Peri<'d, gpio::AnyPin>) -> Self {
+    fn new(pin_led: Peri<'d, impl gpio::Pin>, pin_button: Peri<'d, impl gpio::Pin>) -> Self {
         Self {
             gpio_led: gpio::Output::new(pin_led, gpio::Level::Low),
             gpio_button: gpio::Input::new(pin_button, gpio::Pull::Up),
@@ -34,7 +34,7 @@ impl<'d> Context<'d> {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let mut context = Context::new(p.PIN_25.into(), p.PIN_15.into());
+    let mut context = Context::new(p.PIN_25, p.PIN_15);
     let mut state_prev = context.get_button_state();
     loop {
         let state = context.get_button_state();
