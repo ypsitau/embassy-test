@@ -10,8 +10,6 @@ use embedded_graphics::prelude::*;
 use mipidsi::options::{Orientation, Rotation};
 use {defmt_rtt as _, panic_probe as _};
 
-use crate::touch_xpt2046::Touch;
-
 embassy_rp::bind_interrupts!(struct Irqs {
     DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>, embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH1>;
 });
@@ -23,6 +21,9 @@ const FREQ_TOUCH: u32 = 200_000;
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = embassy_rp::init(Default::default());
     info!("Hello World!");
+    let pin_spi_clk     = p.PIN_10;
+    let pin_spi_mosi    = p.PIN_11;
+    let pin_spi_miso    = p.PIN_12;
     let pin_display_rst = p.PIN_6;
     let pin_display_dc  = p.PIN_7;
     let pin_display_cs  = p.PIN_8;
@@ -31,13 +32,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let _pin_touch_irq  = p.PIN_15;
 
     let spi_bus_shared = {
-        let clk     = p.PIN_10;
-        let mosi    = p.PIN_11;
-        let miso    = p.PIN_12;
-        let tx_dma  = p.DMA_CH0;
-        let rx_dma  = p.DMA_CH1;
-        //let spi_bus = embassy_rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, Default::default());
-        let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, Default::default());
+        let spi_bus = embassy_rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
+        //let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, clk, mosi, miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
         embassy_sync::blocking_mutex::Mutex::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _>::new(RefCell::new(spi_bus))
     };
     let mut touch = {
@@ -48,7 +44,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.polarity = embassy_rp::spi::Polarity::IdleHigh;
             SpiDeviceWithConfig::new(&spi_bus_shared, gpio::Output::new(pin_touch_cs, gpio::Level::High), config)
         };
-        Touch::new(spi_device)
+        xpt2046::Touch::new(spi_device)
     };
     let mut spi_buf = [0u8; 320];
     let mut display = {
@@ -100,7 +96,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 }
 
 /// Driver for the XPT2046 resistive touchscreen sensor
-mod touch_xpt2046 {
+mod xpt2046 {
     use embedded_hal_1::spi::{Operation, SpiDevice};
     //use embedded_hal_async::spi::{Operation, SpiDevice};
 
