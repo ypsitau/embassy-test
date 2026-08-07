@@ -23,9 +23,6 @@ const FREQ_TOUCH: u32 = 200_000;
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = embassy_rp::init(Default::default());
     info!("Hello World!");
-    let pin_spi_clk     = p.PIN_10;
-    let pin_spi_mosi    = p.PIN_11;
-    let pin_spi_miso    = p.PIN_12;
     let pin_display_rst = p.PIN_6;
     let pin_display_dc  = p.PIN_7;
     let pin_display_cs  = p.PIN_8;
@@ -34,8 +31,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let _pin_touch_irq  = p.PIN_15;
 
     let spi_bus_shared = {
-        let spi_bus = embassy_rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
-        //let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, clk, mosi, miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
+        let clk     = p.PIN_10;
+        let mosi    = p.PIN_11;
+        let miso    = p.PIN_12;
+        let tx_dma  = p.DMA_CH0;
+        let rx_dma  = p.DMA_CH1;
+        //let spi_bus = embassy_rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, Default::default());
+        let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, Default::default());
         embassy_sync::blocking_mutex::Mutex::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _>::new(RefCell::new(spi_bus))
     };
     let mut touch = {
