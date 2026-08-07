@@ -33,8 +33,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let _pin_touch_irq  = p.PIN_15;
 
     let spi_bus_shared = {
-        let spi_bus = embassy_rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
-        //let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, clk, mosi, miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
+        //let spi_bus = embassy_rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
+        let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
         embassy_sync::blocking_mutex::Mutex::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _>::new(RefCell::new(spi_bus))
     };
     let mut spi_device_touch = {
