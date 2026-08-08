@@ -5,7 +5,6 @@ use core::cell::RefCell;
 use defmt::info;
 use embassy_embedded_hal::shared_bus;
 use embassy_rp::gpio;
-use embedded_hal_1::spi;
 use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
 use mipidsi::options::{Orientation, Rotation};
@@ -37,7 +36,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
         embassy_sync::blocking_mutex::Mutex::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _>::new(RefCell::new(spi_bus))
     };
-    let mut spi_device_touch = {
+    let mut touch = {
         let spi_device = {
             let mut config = embassy_rp::spi::Config::default();
             config.frequency = SPI_FREQ_TOUCH;
@@ -46,8 +45,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             shared_bus::blocking::spi::SpiDeviceWithConfig::new(
                 &spi_bus_shared, gpio::Output::new(pin_touch_cs, gpio::Level::High), config)
         };
-        spi_device
-        //Touch::new(spi_device)
+        xpt2046::Builder::new(spi_device)
     };
     let mut spi_buf = [0u8; 320];
     let mut display = {
@@ -87,7 +85,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         ).draw(&mut display).unwrap();
     }
     loop {
-        if let Some((x, y)) = read_touch(&mut spi_device_touch) {
+        if let Some((x, y)) = touch.read() {
             let style = eg::primitives::PrimitiveStyleBuilder::new().fill_color(eg::pixelcolor::Rgb565::BLUE).build();
             eg::primitives::Rectangle::new(Point::new(x - 1, y - 1), Size::new(3, 3))
                 .into_styled(style)
@@ -97,42 +95,56 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }
 }
 
-struct Calibration {
-    xraw_max: i32,
-    xraw_min: i32,
-    yraw_min: i32,
-    yraw_max: i32,
-    x_range: i32,
-    y_range: i32,
-}
+mod xpt2046 {
+    use embedded_hal_1::spi;
+    struct Calibration {
+        xraw_max: i32,
+        xraw_min: i32,
+        yraw_min: i32,
+        yraw_max: i32,
+        x_range: i32,
+        y_range: i32,
+    }
 
-impl Calibration {
-    fn calc_pos(&self, xraw: i32, yraw: i32) -> Option<(i32, i32)> {
-        let x = ((xraw - self.xraw_min) * self.x_range / (self.xraw_max - self.xraw_min)).clamp(0, self.x_range);
-        let y = ((yraw - self.yraw_min) * self.y_range / (self.yraw_max - self.yraw_min)).clamp(0, self.y_range);
-        if x == 0 && y == 0 { None } else { Some((x, y)) }
+    impl Calibration {
+        fn calc_pos(&self, xraw: i32, yraw: i32) -> Option<(i32, i32)> {
+            let x = ((xraw - self.xraw_min) * self.x_range / (self.xraw_max - self.xraw_min)).clamp(0, self.x_range);
+            let y = ((yraw - self.yraw_min) * self.y_range / (self.yraw_max - self.yraw_min)).clamp(0, self.y_range);
+            if x == 0 && y == 0 { None } else { Some((x, y)) }
+        }
+    }
+
+    const CALIBRATION: Calibration = Calibration {
+        xraw_min: 340,
+        xraw_max: 3880,
+        yraw_min: 262,
+        yraw_max: 3850,
+        x_range: 320,
+        y_range: 240,
+    };
+
+    pub struct Builder<SPI> {
+        spi: SPI,
+    }
+
+    impl<SPI: spi::SpiDevice> Builder<SPI> {
+        pub fn new(spi: SPI) -> Self {
+            Self { spi }
+        }
+
+        pub fn read(&mut self) -> Option<(i32, i32)> {
+            let mut xbytes = [0u8; 2];
+            let mut ybytes = [0u8; 2];
+            self.spi.transaction(&mut [
+                spi::Operation::Write(&[0x90]),
+                spi::Operation::Read(&mut xbytes),
+                spi::Operation::Write(&[0xd0]),
+                spi::Operation::Read(&mut ybytes),
+            ]).unwrap();
+            let xraw = (u16::from_be_bytes(xbytes) >> 3) as i32;
+            let yraw = (u16::from_be_bytes(ybytes) >> 3) as i32;
+            CALIBRATION.calc_pos(xraw, yraw)
+        }
     }
 }
 
-const CALIBRATION: Calibration = Calibration {
-    xraw_min: 340,
-    xraw_max: 3880,
-    yraw_min: 262,
-    yraw_max: 3850,
-    x_range: 320,
-    y_range: 240,
-};
-
-pub fn read_touch(spi: &mut impl spi::SpiDevice) -> Option<(i32, i32)> {
-    let mut xbytes = [0u8; 2];
-    let mut ybytes = [0u8; 2];
-    spi.transaction(&mut [
-        spi::Operation::Write(&[0x90]),
-        spi::Operation::Read(&mut xbytes),
-        spi::Operation::Write(&[0xd0]),
-        spi::Operation::Read(&mut ybytes),
-    ]).unwrap();
-    let xraw = (u16::from_be_bytes(xbytes) >> 3) as i32;
-    let yraw = (u16::from_be_bytes(ybytes) >> 3) as i32;
-    CALIBRATION.calc_pos(xraw, yraw)
-}
