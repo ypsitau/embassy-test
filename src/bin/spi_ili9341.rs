@@ -9,6 +9,8 @@ use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
 use mipidsi::options::{Orientation, Rotation};
 use {defmt_rtt as _, panic_probe as _};
+//use mipidsi::models::ST7789 as DisplayModel;
+use mipidsi::models::ILI9341Rgb565 as DisplayModel;
 
 embassy_rp::bind_interrupts!(struct Irqs {
     DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>, embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH1>;
@@ -45,7 +47,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             shared_bus::blocking::spi::SpiDeviceWithConfig::new(
                 &spi_bus_shared, gpio::Output::new(pin_touch_cs, gpio::Level::High), config)
         };
-        xpt2046::Builder::new(spi_device)
+        xpt2046::Driver::new(spi_device)
     };
     let mut spi_buf = [0u8; 320];
     let mut display = {
@@ -60,8 +62,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 &spi_bus_shared, gpio::Output::new(pin_display_cs, gpio::Level::High), config)
         };
         let display_interface = mipidsi::interface::SpiInterface::new(spi_device, gpio_dc, &mut spi_buf);
-        //use mipidsi::models::ST7789 as DisplayModel;
-        use mipidsi::models::ILI9341Rgb565 as DisplayModel;
         mipidsi::Builder::new(DisplayModel, display_interface)
             .display_size(240, 320)
             .reset_pin(gpio_rst)
@@ -123,11 +123,11 @@ mod xpt2046 {
         y_range: 240,
     };
 
-    pub struct Builder<SPI> {
+    pub struct Driver<SPI> {
         spi: SPI,
     }
 
-    impl<SPI: spi::SpiDevice> Builder<SPI> {
+    impl<SPI: spi::SpiDevice> Driver<SPI> {
         pub fn new(spi: SPI) -> Self {
             Self { spi }
         }
@@ -147,4 +147,3 @@ mod xpt2046 {
         }
     }
 }
-
