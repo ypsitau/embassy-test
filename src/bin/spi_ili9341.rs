@@ -13,7 +13,9 @@ use {defmt_rtt as _, panic_probe as _};
 use mipidsi::models::ILI9341Rgb565 as DisplayModel;
 
 embassy_rp::bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 => embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>, embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH1>;
+    DMA_IRQ_0 =>
+        embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>,
+        embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH1>;
 });
 
 const SPI_FREQ_DISPLAY: u32 = 64_000_000;

@@ -3,14 +3,14 @@
 
 use defmt::{info, Format};
 use embassy_executor::Spawner;
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use embassy_sync::{blocking_mutex::raw::ThreadModeRawMutex, channel::Channel};
 use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _};
 
 #[derive(Debug, Format)]
 struct Packet(u8, u8);
 
-type PacketChannel = Channel<CriticalSectionRawMutex, Packet, 4>;
+type PacketChannel = Channel<ThreadModeRawMutex, Packet, 4>;
 
 #[embassy_executor::task]
 async fn sender(packet_channel: &'static PacketChannel) {
