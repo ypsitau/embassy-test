@@ -20,17 +20,17 @@ impl<'d> Context<'d> {
             gpio_button: gpio::Input::new(pin_button, gpio::Pull::Up),
         }
     }
-    async fn wait_for_button_press(&mut self) {
-        self.gpio_button.wait_for_falling_edge().await;
-    }
-    async fn wait_for_button_release(&mut self) {
-        self.gpio_button.wait_for_rising_edge().await;
+    fn get_button_state(&self) -> bool {
+        self.gpio_button.is_low()
     }
     fn set_led_high(&mut self) {
         self.gpio_led.set_high();
     }
     fn set_led_low(&mut self) {
         self.gpio_led.set_low();
+    }
+    async fn wait_for_button_changed(&mut self) {
+        self.gpio_button.wait_for_any_edge().await;
     }
 }
 
@@ -39,13 +39,14 @@ async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let mut context = Context::new(p.PIN_25, p.PIN_15);
     loop {
-        context.wait_for_button_press().await;
-        info!("button pressed!");
-        context.set_led_high();
+        context.wait_for_button_changed().await;
         Timer::after_millis(100).await;
-        context.wait_for_button_release().await;
-        info!("button released!");
-        context.set_led_low();
-        Timer::after_millis(100).await;
+        if context.get_button_state() {
+            info!("button pressed!");
+            context.set_led_high();
+        } else {
+            info!("button released!");
+            context.set_led_low();
+        }
     }
 }
