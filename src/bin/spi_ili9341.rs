@@ -77,20 +77,24 @@ async fn main(_spawner: embassy_executor::Spawner) {
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
         Point::new(34, 68)
     ).draw(&mut draw_target).unwrap();
+    let text_style = eg::mono_font::MonoTextStyleBuilder::new()
+        .font(&eg::mono_font::ascii::FONT_10X20)
+        .text_color(eg::pixelcolor::Rgb565::GREEN)
+        .build();
     eg::text::Text::new(
         "Hello embedded_graphics \n + embassy + RP2040!",
         Point::new(20, 200),
-        eg::mono_font::MonoTextStyle::new(&eg::mono_font::ascii::FONT_10X20, eg::pixelcolor::Rgb565::GREEN)
+        text_style
     ).draw(&mut draw_target).unwrap();
+    let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
+        .fill_color(eg::pixelcolor::Rgb565::BLUE)
+        .build();
     loop {
         if let Some((x, y)) = touch.read() {
-            let style = eg::primitives::PrimitiveStyleBuilder::new()
-                .fill_color(eg::pixelcolor::Rgb565::BLUE)
-                .build();
             eg::primitives::Rectangle::new(
                 Point::new(x - 1, y - 1),
                 Size::new(3, 3)
-            ).into_styled(style).draw(&mut draw_target).unwrap();
+            ).into_styled(style_dot).draw(&mut draw_target).unwrap();
         }
     }
 }

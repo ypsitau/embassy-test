@@ -11,6 +11,20 @@ use heapless::String;
 use ssd1306::prelude::*;
 use {defmt_rtt as _, panic_probe as _};
 
+enum Direction {
+    Inc,
+    Dec,
+}
+
+impl Direction {
+    fn step(&self, value: &mut i32) {
+        *value += match self {
+            Direction::Inc => 1,
+            Direction::Dec => -1,
+        };
+    }
+}
+
 embassy_rp::bind_interrupts!(struct Irqs {
     I2C0_IRQ => i2c::InterruptHandler<peripherals::I2C0>;
 });
@@ -25,31 +39,56 @@ async fn main(_spawner: Spawner) {
         config.frequency = 400_000;
         i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)
     };
-    let mut draw_target = {
+    let mut display = {
         let interface = ssd1306::I2CDisplayInterface::new(i2c0);
         ssd1306::Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode()
     };
-    draw_target.init().await.unwrap();
+    display.init().await.unwrap();
     let text_style = eg::mono_font::MonoTextStyleBuilder::new()
         .font(&eg::mono_font::ascii::FONT_10X20)
         .text_color(eg::pixelcolor::BinaryColor::On)
         .build();
-    draw_target.clear(eg::pixelcolor::BinaryColor::Off).unwrap();
-    for i in 0..=1 {
-        let mut text: String<16> = String::new();
-        write!(text, "line.{}", i + 1).unwrap();
+    let mut text: String<16> = String::new();
+    let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
+        .fill_color(eg::pixelcolor::BinaryColor::On)
+        .build();
+    let size_display = display.dimensions();
+    let size_display = Size::new(size_display.0 as u32, size_display.1 as u32);
+    let size_dot = Size::new(8, 8);
+    let mut i = 0;
+    let mut x = size_display.width as i32 / 2;
+    let mut y = size_display.height as i32 / 2;
+    let mut x_dir = Direction::Inc;
+    let mut y_dir = Direction::Inc;
+    loop {
+        display.clear(eg::pixelcolor::BinaryColor::Off).unwrap();
+        text.clear();
+        write!(text, "Frame: {}", i).unwrap();
         eg::text::Text::with_baseline(
             text.as_str(),
-            eg::prelude::Point::new(0, i * 20),
+            Point::new(0, 0),
             text_style,
-            eg::text::Baseline::Top,
-        )
-        .draw(&mut draw_target)
-        .unwrap();
-    }
-    draw_target.flush().await.unwrap();
-    loop {
-        Timer::after_millis(1000).await;
+            eg::text::Baseline::Top
+        ).draw(&mut display).unwrap();
+        eg::primitives::Rectangle::new(
+            Point::new(x, y),
+            size_dot
+        ).into_styled(style_dot).draw(&mut display).unwrap();
+        Timer::after_millis(10).await;
+        i += 1;
+        if x >= (size_display.width - size_dot.width) as i32 {
+            x_dir = Direction::Dec;
+        } else if x <= 0 {
+            x_dir = Direction::Inc;
+        }
+        if y >= (size_display.height - size_dot.height) as i32 {
+            y_dir = Direction::Dec;
+        } else if y <= 0 {
+            y_dir = Direction::Inc;
+        }
+        x_dir.step(&mut x);
+        y_dir.step(&mut y);
+        display.flush().await.unwrap();
     }
 }
