@@ -31,7 +31,11 @@ embedded-hal-async = { version = "1.0.0", features = ["defmt-03"] }
 embedded-io-async = "0.7"
 heapless = "0.9.3"
 mipidsi = "0.10.0"
+portable-atomic = { version = "1.5", features = [
+    "critical-section",
+] } # required for static_cell
 ssd1306 = { version = "0.10.0", features = ["async"] }
+static_cell = { version = "2" }
 
 [target.'cfg( target_arch = "arm" )'.dependencies]
 panic-probe = { version = "1", features = ["print-defmt"] }

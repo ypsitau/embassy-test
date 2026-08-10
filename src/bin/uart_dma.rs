@@ -7,7 +7,6 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::dma;
 use embassy_rp::peripherals;
 use embassy_rp::uart;
-use embassy_time::{Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -26,9 +25,10 @@ async fn main(_spawner: Spawner) {
         let config = uart::Config::default();
         uart::Uart::new(p.UART0, tx, rx, Irqs, tx_dma, rx_dma, config)
     };
-    expect!(uart.write(b"Hello World!\r\n").await);
+    expect!(uart.write(b"Echo example\r\n").await);
     loop {
-        expect!(uart.write(b"hello there!\r\n").await);
-        Timer::after(Duration::from_secs(1)).await;
+        let mut buf = [0u8; 1];
+        expect!(uart.read(&mut buf).await);
+        expect!(uart.write(&buf).await);
     }
 }
