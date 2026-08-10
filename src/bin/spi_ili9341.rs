@@ -52,7 +52,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         xpt2046::Driver::new(spi_device)
     };
     let mut spi_buf = [0u8; 320];
-    let mut display = {
+    let mut draw_target = {
         let gpio_dc = gpio::Output::new(pin_display_dc, gpio::Level::Low);
         let gpio_rst = gpio::Output::new(pin_display_rst, gpio::Level::Low);
         let spi_device = {
@@ -72,27 +72,25 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .unwrap()
     };
     let _gpio_bl = gpio::Output::new(pin_display_bl, gpio::Level::High);
-    display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
-    {
-        let raw_image_data = eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86);
-        let ferris = eg::image::Image::new(&raw_image_data, Point::new(34, 68));
-        ferris.draw(&mut display).unwrap();
-    }
-    {
-        let style = eg::mono_font::MonoTextStyle::new(&eg::mono_font::ascii::FONT_10X20, eg::pixelcolor::Rgb565::GREEN);
-        eg::text::Text::new(
-            "Hello embedded_graphics \n + embassy + RP2040!",
-            Point::new(20, 200),
-            style,
-        ).draw(&mut display).unwrap();
-    }
+    draw_target.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
+    eg::image::Image::new(
+        &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
+        Point::new(34, 68)
+    ).draw(&mut draw_target).unwrap();
+    eg::text::Text::new(
+        "Hello embedded_graphics \n + embassy + RP2040!",
+        Point::new(20, 200),
+        eg::mono_font::MonoTextStyle::new(&eg::mono_font::ascii::FONT_10X20, eg::pixelcolor::Rgb565::GREEN)
+    ).draw(&mut draw_target).unwrap();
     loop {
         if let Some((x, y)) = touch.read() {
-            let style = eg::primitives::PrimitiveStyleBuilder::new().fill_color(eg::pixelcolor::Rgb565::BLUE).build();
-            eg::primitives::Rectangle::new(Point::new(x - 1, y - 1), Size::new(3, 3))
-                .into_styled(style)
-                .draw(&mut display)
-                .unwrap();
+            let style = eg::primitives::PrimitiveStyleBuilder::new()
+                .fill_color(eg::pixelcolor::Rgb565::BLUE)
+                .build();
+            eg::primitives::Rectangle::new(
+                Point::new(x - 1, y - 1),
+                Size::new(3, 3)
+            ).into_styled(style).draw(&mut draw_target).unwrap();
         }
     }
 }

@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-use defmt::expect;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals;
@@ -26,10 +25,10 @@ async fn main(_spawner: Spawner) {
         let config = uart::Config::default();
         uart::BufferedUart::new(p.UART0, tx, rx, Irqs, tx_buffer, rx_buffer, config)
     };
-    expect!(uart.write_all(b"Echo example\r\n").await);
+    uart.write_all(b"Echo example\r\n").await.unwrap();
     loop {
         let mut buf = [0u8; 32];
-        let bytes_read = expect!(uart.read(&mut buf).await);
-        expect!(uart.write_all(&buf[..bytes_read]).await);
+        let bytes_read = uart.read(&mut buf).await.unwrap();
+        uart.write_all(&buf[..bytes_read]).await.unwrap();
     }
 }
