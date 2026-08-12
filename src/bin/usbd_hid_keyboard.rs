@@ -26,7 +26,6 @@ static HID_PROTOCOL_MODE: AtomicU8 = AtomicU8::new(usb_class::hid::HidProtocolMo
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let driver = usb::Driver::new(p.USB, Irqs);
-    let mut request_handler = MyRequestHandler {};
     let mut builder = {
         let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
         config.manufacturer = Some("Embassy");
@@ -54,7 +53,7 @@ async fn main(_spawner: Spawner) {
         builder.handler(DEVICE_HANDLER.init(MyDeviceHandler::new()));
         builder
     };
-    let hid = {
+    let hid_reader_writer = {
         static STATE: StaticCell<usb_class::hid::State> = StaticCell::new();
         let config = embassy_usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::KeyboardReport::desc(),
@@ -64,14 +63,17 @@ async fn main(_spawner: Spawner) {
             hid_subclass: usb_class::hid::HidSubclass::Boot,
             hid_boot_protocol: usb_class::hid::HidBootProtocol::Keyboard,
         };
-        usb_class::hid::HidReaderWriter::<_, 1, 8>::new(&mut builder,
-                STATE.init(usb_class::hid::State::new()), config)
+        usb_class::hid::HidReaderWriter::<_, 1, 8>::new(
+            &mut builder,
+            STATE.init(usb_class::hid::State::new()),
+            config,
+        )
     };
     let mut usb = builder.build();
     let usb_fut = usb.run();
     let mut gpio_signal = gpio::Input::new(p.PIN_16, gpio::Pull::Up);
-    let (reader, mut writer) = hid.split();
-    let in_fut = async {
+    let (hid_reader, mut hid_writer) = hid_reader_writer.split();
+    let hid_writer_task = async {
         loop {
             gpio_signal.wait_for_any_edge().await;
             Timer::after_millis(100).await; // skip the bounding period
@@ -80,7 +82,7 @@ async fn main(_spawner: Spawner) {
                 gpio::Level::Low => { info!("LOW DETECTED"); 4 },
             };
             if HID_PROTOCOL_MODE.load(Ordering::Relaxed) == usb_class::hid::HidProtocolMode::Boot as u8 {
-                if let Err(e) = writer.write(&[0, 0, key_code, 0, 0, 0, 0, 0]).await {
+                if let Err(e) = hid_writer.write(&[0, 0, key_code, 0, 0, 0, 0, 0]).await {
                     warn!("Failed to send boot report: {:?}", e);
                 }
             } else {
@@ -90,23 +92,20 @@ async fn main(_spawner: Spawner) {
                     modifier: 0,
                     reserved: 0,
                 };
-                if let Err(e) = writer.write_serialize(&report).await {
+                if let Err(e) = hid_writer.write_serialize(&report).await {
                     warn!("Failed to send report: {:?}", e);
                 }
             }
         }
     };
-
-    let out_fut = async {
-        reader.run(false, &mut request_handler).await;
+    let hid_reader_task = async {
+        let mut request_handler = MyRequestHandler;
+        hid_reader.run(false, &mut request_handler).await;
     };
-
-    // Run everything concurrently.
-    // If we had made everything `'static` above instead, we could do this using separate tasks instead.
-    join(usb_fut, join(in_fut, out_fut)).await;
+    join(usb_fut, join(hid_writer_task, hid_reader_task)).await;
 }
 
-struct MyRequestHandler {}
+struct MyRequestHandler;
 
 impl usb_class::hid::RequestHandler for MyRequestHandler {
     fn get_report(&mut self, id: usb_class::hid::ReportId, _buf: &mut [u8]) -> Option<usize> {
