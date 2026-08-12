@@ -10,6 +10,7 @@ use embassy_rp::bind_interrupts;
 use embassy_rp::gpio;
 use embassy_rp::peripherals;
 use embassy_rp::usb;
+use embassy_time::Timer;
 use embassy_usb::class as usb_class;
 use usbd_hid::descriptor::SerializedDescriptor;
 use static_cell::StaticCell;
@@ -26,8 +27,6 @@ async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let driver = usb::Driver::new(p.USB, Irqs);
     let mut request_handler = MyRequestHandler {};
-    let mut state = usb_class::hid::State::new();
-    let mut device_handler = MyDeviceHandler::new();
     let mut builder = {
         let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
         config.manufacturer = Some("Embassy");
@@ -43,18 +42,20 @@ async fn main(_spawner: Spawner) {
         static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
         static MSOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
         static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
-        embassy_usb::Builder::new(
+        static DEVICE_HANDLER: StaticCell<MyDeviceHandler> = StaticCell::new();
+        let mut builder = embassy_usb::Builder::new(
             driver,
             config,
             CONFIG_DESCRIPTOR.init([0; 256]),
             BOS_DESCRIPTOR.init([0; 256]),
             MSOS_DESCRIPTOR.init([0; 256]),
             CONTROL_BUF.init([0; 64]),
-        )
+        );
+        builder.handler(DEVICE_HANDLER.init(MyDeviceHandler::new()));
+        builder
     };
-    builder.handler(&mut device_handler);
-
     let hid = {
+        static STATE: StaticCell<usb_class::hid::State> = StaticCell::new();
         let config = embassy_usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::KeyboardReport::desc(),
             request_handler: None,
@@ -63,67 +64,35 @@ async fn main(_spawner: Spawner) {
             hid_subclass: usb_class::hid::HidSubclass::Boot,
             hid_boot_protocol: usb_class::hid::HidBootProtocol::Keyboard,
         };
-        usb_class::hid::HidReaderWriter::<_, 1, 8>::new(&mut builder, &mut state, config)
+        usb_class::hid::HidReaderWriter::<_, 1, 8>::new(&mut builder,
+                STATE.init(usb_class::hid::State::new()), config)
     };
-    // Build the builder.
     let mut usb = builder.build();
-
-    // Run the USB device.
     let usb_fut = usb.run();
-
-    // Set up the signal pin that will be used to trigger the keyboard.
-    let mut signal_pin = gpio::Input::new(p.PIN_16, gpio::Pull::None);
-
-    // Enable the schmitt trigger to slightly debounce.
-    signal_pin.set_schmitt(true);
-
+    let mut gpio_signal = gpio::Input::new(p.PIN_16, gpio::Pull::Up);
     let (reader, mut writer) = hid.split();
-
-    // Do stuff with the class!
     let in_fut = async {
         loop {
-            info!("Waiting for HIGH on pin 16");
-            signal_pin.wait_for_high().await;
-            info!("HIGH DETECTED");
-
+            gpio_signal.wait_for_any_edge().await;
+            Timer::after_millis(100).await; // skip the bounding period
+            let key_code = match gpio_signal.get_level() {
+                gpio::Level::High => { info!("HIGH DETECTED"); 0 },
+                gpio::Level::Low => { info!("LOW DETECTED"); 4 },
+            };
             if HID_PROTOCOL_MODE.load(Ordering::Relaxed) == usb_class::hid::HidProtocolMode::Boot as u8 {
-                match writer.write(&[0, 0, 4, 0, 0, 0, 0, 0]).await {
-                    Ok(()) => {}
-                    Err(e) => warn!("Failed to send boot report: {:?}", e),
-                };
+                if let Err(e) = writer.write(&[0, 0, key_code, 0, 0, 0, 0, 0]).await {
+                    warn!("Failed to send boot report: {:?}", e);
+                }
             } else {
-                // Create a report with the A key pressed. (no shift modifier)
                 let report = usbd_hid::descriptor::KeyboardReport {
-                    keycodes: [4, 0, 0, 0, 0, 0],
+                    keycodes: [key_code, 0, 0, 0, 0, 0],
                     leds: 0,
                     modifier: 0,
                     reserved: 0,
                 };
-                // Send the report.
-                match writer.write_serialize(&report).await {
-                    Ok(()) => {}
-                    Err(e) => warn!("Failed to send report: {:?}", e),
-                };
-            }
-
-            signal_pin.wait_for_low().await;
-            info!("LOW DETECTED");
-            if HID_PROTOCOL_MODE.load(Ordering::Relaxed) == usb_class::hid::HidProtocolMode::Boot as u8 {
-                match writer.write(&[0, 0, 0, 0, 0, 0, 0, 0]).await {
-                    Ok(()) => {}
-                    Err(e) => warn!("Failed to send boot report: {:?}", e),
-                };
-            } else {
-                let report = usbd_hid::descriptor::KeyboardReport {
-                    keycodes: [0, 0, 0, 0, 0, 0],
-                    leds: 0,
-                    modifier: 0,
-                    reserved: 0,
-                };
-                match writer.write_serialize(&report).await {
-                    Ok(()) => {}
-                    Err(e) => warn!("Failed to send report: {:?}", e),
-                };
+                if let Err(e) = writer.write_serialize(&report).await {
+                    warn!("Failed to send report: {:?}", e);
+                }
             }
         }
     };
