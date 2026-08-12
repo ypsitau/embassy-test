@@ -73,7 +73,7 @@ async fn main(_spawner: Spawner) {
     let usb_fut = usb.run();
     let mut gpio_signal = gpio::Input::new(p.PIN_16, gpio::Pull::Up);
     let (hid_reader, mut hid_writer) = hid_reader_writer.split();
-    let hid_writer_task = async {
+    let hid_writer_fut = async {
         loop {
             gpio_signal.wait_for_any_edge().await;
             Timer::after_millis(100).await; // skip the bounding period
@@ -98,11 +98,11 @@ async fn main(_spawner: Spawner) {
             }
         }
     };
-    let hid_reader_task = async {
+    let hid_reader_fut = async {
         let mut request_handler = MyRequestHandler;
         hid_reader.run(false, &mut request_handler).await;
     };
-    join(usb_fut, join(hid_writer_task, hid_reader_task)).await;
+    join(usb_fut, join(hid_writer_fut, hid_reader_fut)).await;
 }
 
 struct MyRequestHandler;
