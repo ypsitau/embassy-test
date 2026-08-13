@@ -1,8 +1,7 @@
 #![no_std]
 #![no_main]
 
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-
+use core::sync::atomic;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
@@ -136,32 +135,32 @@ async fn main(_spawner: Spawner) {
         }
     };
     let fut_hid_keyboard_reader = async {
-        let mut request_handler = RequestHandler::new();
-        hid_keyboard_reader.run(false, &mut request_handler).await;
+        let mut hid_request_handler = HidRequestHandler::new();
+        hid_keyboard_reader.run(false, &mut hid_request_handler).await;
     };
     let fut_hid_mouse_reader = async {
-        let mut request_handler = RequestHandler::new();
-        hid_mouse_reader.run(false, &mut request_handler).await;
+        let mut hid_request_handler = HidRequestHandler::new();
+        hid_mouse_reader.run(false, &mut hid_request_handler).await;
     };
     embassy_futures::join::join5(fut_usb, fut_hid_keyboard_writer, fut_hid_mouse_writer, fut_hid_keyboard_reader, fut_hid_mouse_reader).await;
 }
 
 //-----------------------------------------------------------------------------
-// RequestHandler
+// HidRequestHandler
 //-----------------------------------------------------------------------------
-struct RequestHandler {
-    hid_protocol_mode: AtomicU8,
+struct HidRequestHandler {
+    hid_protocol_mode: atomic::AtomicU8,
 }
 
-impl RequestHandler {
+impl HidRequestHandler {
     fn new() -> Self {
-        RequestHandler {
-            hid_protocol_mode: AtomicU8::new(usb_class::hid::HidProtocolMode::Boot as u8),
+        HidRequestHandler {
+            hid_protocol_mode: atomic::AtomicU8::new(usb_class::hid::HidProtocolMode::Boot as u8),
         }
     }
 }
 
-impl usb_class::hid::RequestHandler for RequestHandler {
+impl usb_class::hid::RequestHandler for HidRequestHandler {
     // Reads the value of report `id` into `buf` returning the size.
     // Returns `None` if `id` is invalid or no data is available.
     fn get_report(&mut self, id: usb_class::hid::ReportId, _buf: &mut [u8]) -> Option<usize> {
@@ -170,13 +169,13 @@ impl usb_class::hid::RequestHandler for RequestHandler {
     }
     // Sets the value of report `id` to `data`.
     fn set_report(&mut self, id: usb_class::hid::ReportId, data: &[u8]) -> embassy_usb::control::OutResponse {
-        info!("hid::RequestHandler.set_report(id: {:?}, data: {=[u8]})", id, data);
+        info!("hid::RequestHandler.set_report(id: {:?}, data: {:02x}", id, data);
         embassy_usb::control::OutResponse::Accepted
     }
     // Gets the current hid protocol.
     // Returns `Report` protocol by default.
     fn get_protocol(&self) -> usb_class::hid::HidProtocolMode {
-        let mode = usb_class::hid::HidProtocolMode::from(self.hid_protocol_mode.load(Ordering::Relaxed));
+        let mode = usb_class::hid::HidProtocolMode::from(self.hid_protocol_mode.load(atomic::Ordering::Relaxed));
         info!("hid::RequestHandler.get_protocol() -> {}", mode);
         mode
     }
@@ -184,7 +183,7 @@ impl usb_class::hid::RequestHandler for RequestHandler {
     // Accepts only `Report` protocol by default.
     fn set_protocol(&mut self, protocol: usb_class::hid::HidProtocolMode) -> embassy_usb::control::OutResponse {
         info!("hid::RequestHandler.set_protocol(protocol: {})", protocol);
-        self.hid_protocol_mode.store(protocol as u8, Ordering::Relaxed);
+        self.hid_protocol_mode.store(protocol as u8, atomic::Ordering::Relaxed);
         embassy_usb::control::OutResponse::Accepted
     }
     // Get the idle rate for `id`.
@@ -207,13 +206,13 @@ impl usb_class::hid::RequestHandler for RequestHandler {
 // DeviceHandler
 //-----------------------------------------------------------------------------
 struct DeviceHandler {
-    configured: AtomicBool,
+    configured: atomic::AtomicBool,
 }
 
 impl DeviceHandler {
     fn new() -> Self {
         DeviceHandler {
-            configured: AtomicBool::new(false),
+            configured: atomic::AtomicBool::new(false),
         }
     }
 }
@@ -222,21 +221,21 @@ impl embassy_usb::Handler for DeviceHandler {
     /// Called when the USB device has been enabled or disabled.
     fn enabled(&mut self, enabled: bool) {
         info!("embassy_usb::Handler.enabled({})", enabled);
-        self.configured.store(false, Ordering::Relaxed);
+        self.configured.store(false, atomic::Ordering::Relaxed);
     }
     /// Called after a USB reset after the bus reset sequence is complete.
     fn reset(&mut self) {
         info!("embassy_usb::Handler.reset()");
-        self.configured.store(false, Ordering::Relaxed);
+        self.configured.store(false, atomic::Ordering::Relaxed);
     }
     /// Called when the host has set the address of the device to `addr`.
     fn addressed(&mut self, addr: u8) {
         info!("embassy_usb::Handler.addressed(addr: {})", addr);
-        self.configured.store(false, Ordering::Relaxed);
+        self.configured.store(false, atomic::Ordering::Relaxed);
     }
     /// Called when the host has enabled or disabled the configuration of the device.
     fn configured(&mut self, configured: bool) {
         info!("embassy_usb::Handler.configured(configured: {})", configured);
-        self.configured.store(configured, Ordering::Relaxed);
+        self.configured.store(configured, atomic::Ordering::Relaxed);
     }
 }

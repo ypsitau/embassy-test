@@ -1,12 +1,12 @@
 #![no_std]
 #![no_main]
 
+use core::sync::atomic;
 use defmt::{info, panic};
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals;
 use embassy_rp::usb;
-use embassy_usb::UsbDevice;
 use embassy_usb::class as usb_class;
 use embassy_usb::driver as usb_driver;
 use static_cell::StaticCell;
@@ -17,59 +17,95 @@ bind_interrupts!(struct Irqs {
 });
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {
-    info!("Hello there!");
+async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let driver = usb::Driver::new(p.USB, Irqs);
-    let mut builder = {
+    let usb_driver = usb::Driver::new(p.USB, Irqs);
+    let mut usb_builder = {
         let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
         config.manufacturer = Some("Embassy");
         config.product = Some("USB-serial example");
         config.serial_number = Some("12345678");
         config.max_power = 100;
         config.max_packet_size_0 = 64;
-        static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-        static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-        static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
-        embassy_usb::Builder::new(
-            driver,
+        static CONFIG_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+        static BOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+        static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+        static CONTROL_BUF_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+        let mut usb_builder = embassy_usb::Builder::new(
+            usb_driver,
             config,
-            CONFIG_DESCRIPTOR.init([0; 256]),
-            BOS_DESCRIPTOR.init([0; 256]),
-            &mut [], // no msos descriptors
-            CONTROL_BUF.init([0; 64]),
-        )
+            CONFIG_DESCRIPTOR_BUF.init([0; 256]),
+            BOS_DESCRIPTOR_BUF.init([0; 256]),
+            MSOS_DESCRIPTOR_BUF.init([0; 256]),
+            CONTROL_BUF_BUF.init([0; 64]),
+        );
+        static DEVICE_HANDLER: StaticCell<DeviceHandler> = StaticCell::new();
+        usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
+        usb_builder
     };
-    let mut class = {
+    let mut cdc_acm_class = {
         static STATE: StaticCell<usb_class::cdc_acm::State> = StaticCell::new();
         let state = STATE.init(usb_class::cdc_acm::State::new());
         let max_packet_size = 64;
-        usb_class::cdc_acm::CdcAcmClass::new(&mut builder, state, max_packet_size)
+        usb_class::cdc_acm::CdcAcmClass::new(&mut usb_builder, state, max_packet_size)
     };
-    let usb_device = builder.build();
-    spawner.spawn(usb_task(usb_device).unwrap());
-    loop {
-        class.wait_connection().await;
-        info!("Connected");
-        let mut buf = [0; 64];
-        let err = loop {
-            match class.read_packet(&mut buf).await {
-                Ok(n) => {
-                    let data = &buf[..n];
-                    info!("data: {:x}", data);
-                    if let Err(err) = class.write_packet(data).await { break err; };
-                },
-                Err(err) => break err,
+    let mut usb_device = usb_builder.build();
+    let fut_usb = usb_device.run();
+    let fut_echo = async {
+        loop {
+            cdc_acm_class.wait_connection().await;
+            info!("Connected");
+            let mut buf = [0u8; 64];
+            let e = loop {
+                let buf_read = match cdc_acm_class.read_packet(&mut buf).await {
+                    Ok(n) => &buf[..n], Err(e) => break e,
+                };
+                info!("buf_read: {:02x}", buf_read);
+                if let Err(e) = cdc_acm_class.write_packet(buf_read).await { break e; };
+            };
+            match e {
+                usb_driver::EndpointError::BufferOverflow => panic!("Buffer overflow"),
+                usb_driver::EndpointError::Disabled => info!("Disconnected"),
             }
-        };
-        match err {
-            usb_driver::EndpointError::BufferOverflow => panic!("Buffer overflow"),
-            usb_driver::EndpointError::Disabled => info!("Disconnected"),
+        }
+    };
+    embassy_futures::join::join(fut_usb, fut_echo).await;
+}
+
+//-----------------------------------------------------------------------------
+// DeviceHandler
+//-----------------------------------------------------------------------------
+struct DeviceHandler {
+    configured: atomic::AtomicBool,
+}
+
+impl DeviceHandler {
+    fn new() -> Self {
+        DeviceHandler {
+            configured: atomic::AtomicBool::new(false),
         }
     }
 }
 
-#[embassy_executor::task]
-async fn usb_task(mut usb_device: UsbDevice<'static, usb::Driver<'static, peripherals::USB>>) -> ! {
-    usb_device.run().await
+impl embassy_usb::Handler for DeviceHandler {
+    /// Called when the USB device has been enabled or disabled.
+    fn enabled(&mut self, enabled: bool) {
+        info!("embassy_usb::Handler.enabled({})", enabled);
+        self.configured.store(false, atomic::Ordering::Relaxed);
+    }
+    /// Called after a USB reset after the bus reset sequence is complete.
+    fn reset(&mut self) {
+        info!("embassy_usb::Handler.reset()");
+        self.configured.store(false, atomic::Ordering::Relaxed);
+    }
+    /// Called when the host has set the address of the device to `addr`.
+    fn addressed(&mut self, addr: u8) {
+        info!("embassy_usb::Handler.addressed(addr: {})", addr);
+        self.configured.store(false, atomic::Ordering::Relaxed);
+    }
+    /// Called when the host has enabled or disabled the configuration of the device.
+    fn configured(&mut self, configured: bool) {
+        info!("embassy_usb::Handler.configured(configured: {})", configured);
+        self.configured.store(configured, atomic::Ordering::Relaxed);
+    }
 }
