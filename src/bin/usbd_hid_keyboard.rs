@@ -50,7 +50,7 @@ async fn main(_spawner: Spawner) {
         usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
         usb_builder
     };
-    let (hid_reader, mut hid_writer) = {
+    let (hid_keyboard_reader, mut hid_keyboard_writer) = {
         static STATE: StaticCell<usb_class::hid::State> = StaticCell::new();
         let config = embassy_usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::KeyboardReport::desc(),
@@ -66,9 +66,25 @@ async fn main(_spawner: Spawner) {
             config,
         ).split()
     };
+    let (hid_mouse_reader, mut hid_mouse_writer) = {
+        static STATE: StaticCell<usb_class::hid::State> = StaticCell::new();
+        let config = embassy_usb::class::hid::Config {
+            report_descriptor: usbd_hid::descriptor::MouseReport::desc(),
+            request_handler: None,
+            poll_ms: 60,
+            max_packet_size: 64,
+            hid_subclass: usb_class::hid::HidSubclass::Boot,
+            hid_boot_protocol: usb_class::hid::HidBootProtocol::Mouse,
+        };
+        usb_class::hid::HidReaderWriter::<_, 1, 8>::new(
+            &mut usb_builder,
+            STATE.init(usb_class::hid::State::new()),
+            config,
+        ).split()
+    };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    let fut_hid_writer = async {
+    let fut_hid_keyboard_writer = async {
         let mut gpio_button_left = gpio::Input::new(p.PIN_18, gpio::Pull::Up);
         let mut gpio_button_up = gpio::Input::new(p.PIN_19, gpio::Pull::Up);
         let mut gpio_button_down = gpio::Input::new(p.PIN_20, gpio::Pull::Up);
@@ -93,17 +109,41 @@ async fn main(_spawner: Spawner) {
                 leds: 0,
                 keycodes,
             };
-            println!("Sending report: {:?}", keycodes);
-            if let Err(e) = hid_writer.write_serialize(&keyboard_report).await {
+            //let mut buf: [u8; 8] = [0; 8];
+            //if let Ok(len) = keyboard_report.serialize(&mut buf) {
+            //    info!("Serialized report: {:?}", &buf[..len]);
+            //}
+            if let Err(e) = hid_keyboard_writer.write_serialize(&keyboard_report).await {
                 warn!("Failed to send report: {:?}", e);
             }
         }
     };
-    let fut_hid_reader = async {
-        let mut request_handler = RequestHandler::new();
-        hid_reader.run(false, &mut request_handler).await;
+    let fut_hid_mouse_writer = async {
+        let gpio_button_a = gpio::Input::new(p.PIN_16, gpio::Pull::Up);
+        let gpio_button_b = gpio::Input::new(p.PIN_17, gpio::Pull::Up);
+        loop {
+            let mouse_report = usbd_hid::descriptor::MouseReport {
+                buttons: 0,
+                x: 0,
+                y: if gpio_button_a.is_low() { -20 } else if gpio_button_b.is_low() { 20 } else { 0 },
+                wheel: 0,
+                pan: 0,
+            };
+            if let Err(e) = hid_mouse_writer.write_serialize(&mouse_report).await {
+                warn!("Failed to send report: {:?}", e);
+            }
+            Timer::after_millis(100).await;
+        }
     };
-    embassy_futures::join::join3(fut_usb, fut_hid_writer, fut_hid_reader).await;
+    let fut_hid_keyboard_reader = async {
+        let mut request_handler = RequestHandler::new();
+        hid_keyboard_reader.run(false, &mut request_handler).await;
+    };
+    let fut_hid_mouse_reader = async {
+        let mut request_handler = RequestHandler::new();
+        hid_mouse_reader.run(false, &mut request_handler).await;
+    };
+    embassy_futures::join::join5(fut_usb, fut_hid_keyboard_writer, fut_hid_mouse_writer, fut_hid_keyboard_reader, fut_hid_mouse_reader).await;
 }
 
 //-----------------------------------------------------------------------------
