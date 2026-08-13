@@ -35,16 +35,16 @@ async fn main(_spawner: Spawner) {
         config.device_class = 0;
         config.device_sub_class = 0;
         config.device_protocol = 0;
-        static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-        static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
-        static MSOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
+        static CONFIG_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+        static BOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
+        static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
         static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
         let mut usb_builder = embassy_usb::Builder::new(
             usb_driver,
             config,
-            CONFIG_DESCRIPTOR.init([0; 256]),
-            BOS_DESCRIPTOR.init([0; 256]),
-            MSOS_DESCRIPTOR.init([0; 256]),
+            CONFIG_DESCRIPTOR_BUF.init([0; 256]),
+            BOS_DESCRIPTOR_BUF.init([0; 256]),
+            MSOS_DESCRIPTOR_BUF.init([0; 256]),
             CONTROL_BUF.init([0; 64]),
         );
         static DEVICE_HANDLER: StaticCell<DeviceHandler> = StaticCell::new();
@@ -123,30 +123,44 @@ impl RequestHandler {
 }
 
 impl usb_class::hid::RequestHandler for RequestHandler {
+    // Reads the value of report `id` into `buf` returning the size.
+    // Returns `None` if `id` is invalid or no data is available.
     fn get_report(&mut self, id: usb_class::hid::ReportId, _buf: &mut [u8]) -> Option<usize> {
-        info!("Get report for {:?}", id);
+        info!("hid::RequestHander.get_report(id: {:?})", id);
         None
     }
+    // Sets the value of report `id` to `data`.
     fn set_report(&mut self, id: usb_class::hid::ReportId, data: &[u8]) -> embassy_usb::control::OutResponse {
-        info!("Set report for {:?}: {=[u8]}", id, data);
+        info!("hid::RequestHandler.set_report(id: {:?}, data: {=[u8]})", id, data);
         embassy_usb::control::OutResponse::Accepted
     }
+    // Gets the current hid protocol.
+    // Returns `Report` protocol by default.
     fn get_protocol(&self) -> usb_class::hid::HidProtocolMode {
         let mode = usb_class::hid::HidProtocolMode::from(self.hid_protocol_mode.load(Ordering::Relaxed));
-        info!("The current HID protocol mode is: {}", mode);
+        info!("hid::RequestHandler.get_protocol() -> {}", mode);
         mode
     }
+    // Sets the current hid protocol to `protocol`.
+    // Accepts only `Report` protocol by default.
     fn set_protocol(&mut self, protocol: usb_class::hid::HidProtocolMode) -> embassy_usb::control::OutResponse {
-        info!("Switching to HID protocol mode: {}", protocol);
+        info!("hid::RequestHandler.set_protocol(protocol: {})", protocol);
         self.hid_protocol_mode.store(protocol as u8, Ordering::Relaxed);
         embassy_usb::control::OutResponse::Accepted
     }
-    fn set_idle_ms(&mut self, id: Option<usb_class::hid::ReportId>, dur: u32) {
-        info!("Set idle rate for {:?} to {:?}", id, dur);
-    }
+    // Get the idle rate for `id`.
+    // If `id` is `None`, get the idle rate for all reports. Returning `None`
+    // will reject the control request. Any duration at or above 1.024 seconds
+    // or below 4ms will be returned as an indefinite idle rate.
     fn get_idle_ms(&mut self, id: Option<usb_class::hid::ReportId>) -> Option<u32> {
-        info!("Get idle rate for {:?}", id);
+        info!("hid::RequestHandler.get_idle_ms(id: {:?})", id);
         None
+    }
+    // Set the idle rate for `id` to `dur`.
+    // If `id` is `None`, set the idle rate of all input reports to `dur`. If
+    // an indefinite duration is requested, `dur` will be set to `u32::MAX`.
+    fn set_idle_ms(&mut self, id: Option<usb_class::hid::ReportId>, dur: u32) {
+        info!("hid::RequestHandler.set_idle_ms(id: {:?}, dur: {:?})", id, dur);
     }
 }
 
@@ -166,28 +180,24 @@ impl DeviceHandler {
 }
 
 impl embassy_usb::Handler for DeviceHandler {
+    /// Called when the USB device has been enabled or disabled.
     fn enabled(&mut self, enabled: bool) {
+        info!("embassy_usb::Handler.enabled({})", enabled);
         self.configured.store(false, Ordering::Relaxed);
-        if enabled {
-            info!("Device enabled");
-        } else {
-            info!("Device disabled");
-        }
     }
+    /// Called after a USB reset after the bus reset sequence is complete.
     fn reset(&mut self) {
+        info!("embassy_usb::Handler.reset()");
         self.configured.store(false, Ordering::Relaxed);
-        info!("Bus reset, the Vbus current limit is 100mA");
     }
+    /// Called when the host has set the address of the device to `addr`.
     fn addressed(&mut self, addr: u8) {
+        info!("embassy_usb::Handler.addressed(addr: {})", addr);
         self.configured.store(false, Ordering::Relaxed);
-        info!("USB address set to: {}", addr);
     }
+    /// Called when the host has enabled or disabled the configuration of the device.
     fn configured(&mut self, configured: bool) {
+        info!("embassy_usb::Handler.configured(configured: {})", configured);
         self.configured.store(configured, Ordering::Relaxed);
-        if configured {
-            info!("Device configured, it may now draw up to the configured current limit from Vbus.")
-        } else {
-            info!("Device is no longer configured, the Vbus current limit is 100mA.");
-        }
     }
 }
