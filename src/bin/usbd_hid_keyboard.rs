@@ -5,7 +5,6 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_futures::join::join;
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio;
 use embassy_rp::peripherals;
@@ -104,7 +103,7 @@ async fn main(_spawner: Spawner) {
         let mut request_handler = RequestHandler::new();
         hid_reader.run(false, &mut request_handler).await;
     };
-    join(fut_usb, join(fut_hid_writer, fut_hid_reader)).await;
+    embassy_futures::join::join3(fut_usb, fut_hid_writer, fut_hid_reader).await;
 }
 
 //-----------------------------------------------------------------------------
