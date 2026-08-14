@@ -45,13 +45,13 @@ async fn main(_spawner: Spawner) {
         usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
         usb_builder
     };
-    let cdc_acm_1 = {
+    let cdc_acm_driver_1 = {
         static STATE: StaticCell<usb_class::cdc_acm::State> = StaticCell::new();
         let state = STATE.init(usb_class::cdc_acm::State::new());
         let max_packet_size = 64;
         usb_class::cdc_acm::CdcAcmClass::new(&mut usb_builder, state, max_packet_size)
     };
-    let cdc_acm_2 = {
+    let cdc_acm_driver_2 = {
         static STATE: StaticCell<usb_class::cdc_acm::State> = StaticCell::new();
         let state = STATE.init(usb_class::cdc_acm::State::new());
         let max_packet_size = 64;
@@ -59,32 +59,34 @@ async fn main(_spawner: Spawner) {
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    let fut_echo_1 = run_session(cdc_acm_1, "USB CDC ACM 1");
-    let fut_echo_2 = run_session(cdc_acm_2, "USB CDC ACM 2");
+    let fut_echo_1 = run_session(cdc_acm_driver_1, "USB CDC ACM 1");
+    let fut_echo_2 = run_session(cdc_acm_driver_2, "USB CDC ACM 2");
     embassy_futures::join::join3(fut_usb, fut_echo_1, fut_echo_2).await;
 }
 
-type CdcAcm<'d> = usb_class::cdc_acm::CdcAcmClass<'d, usb::Driver<'d, peripherals::USB>>;
+type CdcAcmDriver<'d> = usb_class::cdc_acm::CdcAcmClass<'d, usb::Driver<'d, peripherals::USB>>;
 
-async fn run_session(mut cdc_acm: CdcAcm<'_>, name: &str) -> Result<(), usb_driver::EndpointError> {
-    let mut first = true;
-    let mut buf = [0u8; 64];
+async fn run_session(mut cdc_acm_driver: CdcAcmDriver<'_>, name: &str) -> Result<(), usb_driver::EndpointError> {
     let mut text_opening = String::<64>::new();
     write!(text_opening, "\r\nEcho via {}\r\n", name).unwrap();
-    loop {
-        cdc_acm.wait_connection().await;
+    let mut first = true;
+    let mut buf = [0u8; 64];
+    let e = loop {
+        cdc_acm_driver.wait_connection().await;
         info!("Connected");
-        loop {
-            let n = cdc_acm.read_packet(&mut buf).await?;
+        let e = loop {
+            let buf_read = match cdc_acm_driver.read_packet(&mut buf).await {
+                Ok(n) => &buf[..n], Err(e) => break e,
+            };
             if first {
-                cdc_acm.write_packet(text_opening.as_bytes()).await?;
+                if let Err(e) = cdc_acm_driver.write_packet(text_opening.as_bytes()).await { break e; }
                 first = false;
             }
-            cdc_acm.write_packet(&buf[..n]).await?;
-        }
-    }
-    #[allow(unreachable_code)]
-    Ok(())
+            if let Err(e) = cdc_acm_driver.write_packet(buf_read).await { break e; }
+        };
+        if e != usb_driver::EndpointError::Disabled { break e; }
+    };
+    Err(e)
 }
 
 //-----------------------------------------------------------------------------
