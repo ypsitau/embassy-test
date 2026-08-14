@@ -28,9 +28,14 @@ async fn main(_spawner: Spawner) {
 }
 
 async fn do_session(mut uart_driver: uart::Uart<'_, uart::Async>) -> Result<(), uart::Error> {
+    let mut first = true;
+    let mut buf = [0u8; 1];
     loop {
-        let mut buf = [0u8; 1];
         uart_driver.read(&mut buf).await?;
+        if first {
+            uart_driver.write(b"\r\nEcho via Async UART\r\n").await?;
+            first = false;
+        }
         uart_driver.write(&buf).await?;
     }
     #[allow(unreachable_code)]

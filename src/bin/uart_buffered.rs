@@ -29,11 +29,15 @@ async fn main(_spawner: Spawner) {
 }
 
 async fn do_session(mut uart_driver: uart::BufferedUart) -> Result<(), uart::Error> {
-    uart_driver.write_all(b"Echo example\r\n").await?;
+    let mut first = true;
+    let mut buf = [0u8; 64];
     loop {
-        let mut buf = [0u8; 32];
-        let bytes_read = uart_driver.read(&mut buf).await?;
-        uart_driver.write_all(&buf[..bytes_read]).await?;
+        let n = uart_driver.read(&mut buf).await?;
+        if first {
+            uart_driver.write_all(b"\r\nEcho via Buffered UART\r\n").await?;
+            first = false;
+        }
+        uart_driver.write_all(&buf[..n]).await?;
     }
     #[allow(unreachable_code)]
     Ok(()) 

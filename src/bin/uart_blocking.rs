@@ -18,9 +18,14 @@ async fn main(_spawner: Spawner) {
 }
 
 fn do_session(mut uart_driver: uart::Uart<'_, uart::Blocking>) -> Result<(), uart::Error> {
+    let mut first = true;
+    let mut buf = [0u8; 1];
     loop {
-        let mut buf = [0u8; 1];
         uart_driver.blocking_read(&mut buf)?;
+        if first {
+            uart_driver.blocking_write(b"\r\nEcho via Blocking UART\r\n")?;
+            first = false;
+        }
         uart_driver.blocking_write(&buf)?;
     }
     #[allow(unreachable_code)]

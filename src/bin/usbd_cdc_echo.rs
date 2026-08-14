@@ -55,21 +55,32 @@ async fn main(_spawner: Spawner) {
         loop {
             cdc_acm_class.wait_connection().await;
             info!("Connected");
-            let mut buf = [0u8; 64];
-            let e = loop {
-                let buf_read = match cdc_acm_class.read_packet(&mut buf).await {
-                    Ok(n) => &buf[..n], Err(e) => break e,
-                };
-                info!("buf_read: {:02x}", buf_read);
-                if let Err(e) = cdc_acm_class.write_packet(buf_read).await { break e; };
-            };
-            match e {
-                usb_driver::EndpointError::BufferOverflow => panic!("Buffer overflow"),
-                usb_driver::EndpointError::Disabled => info!("Disconnected"),
-            }
+            do_session(&mut cdc_acm_class).await.unwrap_or_else(|e| {
+                match e {
+                    usb_driver::EndpointError::BufferOverflow => panic!("Buffer overflow"),
+                    usb_driver::EndpointError::Disabled => info!("Disconnected"),
+                }
+            });
         }
     };
     embassy_futures::join::join(fut_usb, fut_echo).await;
+}
+
+type CdcAcmClass<'d> = usb_class::cdc_acm::CdcAcmClass<'d, usb::Driver<'d, peripherals::USB>>;
+
+async fn do_session<'d>(cdc_acm_class: &mut CdcAcmClass<'d>) -> Result<(), usb_driver::EndpointError> {
+    let mut first = true;
+    let mut buf = [0u8; 64];
+    loop {
+        let n = cdc_acm_class.read_packet(&mut buf).await?;
+        if first {
+            cdc_acm_class.write_packet(b"\r\nEcho via USB CDC\r\n").await?;
+            first = false;
+        }
+        cdc_acm_class.write_packet(&buf[..n]).await?;
+    }
+    #[allow(unreachable_code)]
+    Ok(())
 }
 
 //-----------------------------------------------------------------------------
