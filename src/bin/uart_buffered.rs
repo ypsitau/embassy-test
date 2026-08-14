@@ -25,14 +25,16 @@ async fn main(_spawner: Spawner) {
         let config = uart::Config::default();
         uart::BufferedUart::new(p.UART0, tx, rx, Irqs, tx_buffer, rx_buffer, config)
     };
-    do_session(uart_driver).await;
+    do_session(uart_driver).await.unwrap();
 }
 
-async fn do_session(mut uart_driver: uart::BufferedUart) -> ! {
-    uart_driver.write_all(b"Echo example\r\n").await.unwrap();
+async fn do_session(mut uart_driver: uart::BufferedUart) -> Result<(), uart::Error> {
+    uart_driver.write_all(b"Echo example\r\n").await?;
     loop {
         let mut buf = [0u8; 32];
-        let bytes_read = uart_driver.read(&mut buf).await.unwrap();
-        uart_driver.write_all(&buf[..bytes_read]).await.unwrap();
+        let bytes_read = uart_driver.read(&mut buf).await?;
+        uart_driver.write_all(&buf[..bytes_read]).await?;
     }
+    #[allow(unreachable_code)]
+    Ok(()) 
 }
