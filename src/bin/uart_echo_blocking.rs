@@ -14,10 +14,10 @@ async fn main(_spawner: Spawner) {
         let config = uart::Config::default();
         uart::Uart::new_blocking(p.UART0, tx, rx, config)
     };
-    do_session(uart_driver).unwrap();
+    run_session(uart_driver).unwrap();
 }
 
-fn do_session(mut uart_driver: uart::Uart<'_, uart::Blocking>) -> Result<(), uart::Error> {
+fn run_session(mut uart_driver: uart::Uart<'_, uart::Blocking>) -> Result<(), uart::Error> {
     let mut first = true;
     let mut buf = [0u8; 1];
     loop {

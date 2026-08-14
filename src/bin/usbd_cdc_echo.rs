@@ -1,14 +1,16 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::Write;
 use core::sync::atomic;
-use defmt::{info, panic};
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals;
 use embassy_rp::usb;
 use embassy_usb::class as usb_class;
 use embassy_usb::driver as usb_driver;
+use heapless::String;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -43,7 +45,13 @@ async fn main(_spawner: Spawner) {
         usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
         usb_builder
     };
-    let mut cdc_acm_class = {
+    let cdc_acm_1 = {
+        static STATE: StaticCell<usb_class::cdc_acm::State> = StaticCell::new();
+        let state = STATE.init(usb_class::cdc_acm::State::new());
+        let max_packet_size = 64;
+        usb_class::cdc_acm::CdcAcmClass::new(&mut usb_builder, state, max_packet_size)
+    };
+    let cdc_acm_2 = {
         static STATE: StaticCell<usb_class::cdc_acm::State> = StaticCell::new();
         let state = STATE.init(usb_class::cdc_acm::State::new());
         let max_packet_size = 64;
@@ -51,33 +59,29 @@ async fn main(_spawner: Spawner) {
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    let fut_echo = async {
-        loop {
-            cdc_acm_class.wait_connection().await;
-            info!("Connected");
-            do_session(&mut cdc_acm_class).await.unwrap_or_else(|e| {
-                match e {
-                    usb_driver::EndpointError::BufferOverflow => panic!("Buffer overflow"),
-                    usb_driver::EndpointError::Disabled => info!("Disconnected"),
-                }
-            });
-        }
-    };
-    embassy_futures::join::join(fut_usb, fut_echo).await;
+    let fut_echo_1 = run_session(cdc_acm_1, "USB CDC ACM 1");
+    let fut_echo_2 = run_session(cdc_acm_2, "USB CDC ACM 2");
+    embassy_futures::join::join3(fut_usb, fut_echo_1, fut_echo_2).await;
 }
 
-type CdcAcmClass<'d> = usb_class::cdc_acm::CdcAcmClass<'d, usb::Driver<'d, peripherals::USB>>;
+type CdcAcm<'d> = usb_class::cdc_acm::CdcAcmClass<'d, usb::Driver<'d, peripherals::USB>>;
 
-async fn do_session<'d>(cdc_acm_class: &mut CdcAcmClass<'d>) -> Result<(), usb_driver::EndpointError> {
+async fn run_session(mut cdc_acm: CdcAcm<'_>, name: &str) -> Result<(), usb_driver::EndpointError> {
     let mut first = true;
     let mut buf = [0u8; 64];
+    let mut text_opening = String::<64>::new();
+    write!(text_opening, "\r\nEcho via {}\r\n", name).unwrap();
     loop {
-        let n = cdc_acm_class.read_packet(&mut buf).await?;
-        if first {
-            cdc_acm_class.write_packet(b"\r\nEcho via USB CDC\r\n").await?;
-            first = false;
+        cdc_acm.wait_connection().await;
+        info!("Connected");
+        loop {
+            let n = cdc_acm.read_packet(&mut buf).await?;
+            if first {
+                cdc_acm.write_packet(text_opening.as_bytes()).await?;
+                first = false;
+            }
+            cdc_acm.write_packet(&buf[..n]).await?;
         }
-        cdc_acm_class.write_packet(&buf[..n]).await?;
     }
     #[allow(unreachable_code)]
     Ok(())

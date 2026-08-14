@@ -25,10 +25,10 @@ async fn main(_spawner: Spawner) {
         let config = uart::Config::default();
         uart::BufferedUart::new(p.UART0, tx, rx, Irqs, tx_buffer, rx_buffer, config)
     };
-    do_session(uart_driver).await.unwrap();
+    run_session(uart_driver).await.unwrap();
 }
 
-async fn do_session(mut uart_driver: uart::BufferedUart) -> Result<(), uart::Error> {
+async fn run_session(mut uart_driver: uart::BufferedUart) -> Result<(), uart::Error> {
     let mut first = true;
     let mut buf = [0u8; 64];
     loop {
