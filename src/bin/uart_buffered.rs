@@ -15,7 +15,7 @@ bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let mut uart = {
+    let uart_driver = {
         let tx = p.PIN_0;
         let rx = p.PIN_1;
         static TX_BUFFER: static_cell::StaticCell<[u8; 64]> = static_cell::StaticCell::new();
@@ -25,10 +25,14 @@ async fn main(_spawner: Spawner) {
         let config = uart::Config::default();
         uart::BufferedUart::new(p.UART0, tx, rx, Irqs, tx_buffer, rx_buffer, config)
     };
-    uart.write_all(b"Echo example\r\n").await.unwrap();
+    do_session(uart_driver).await;
+}
+
+async fn do_session(mut uart_driver: uart::BufferedUart) -> ! {
+    uart_driver.write_all(b"Echo example\r\n").await.unwrap();
     loop {
         let mut buf = [0u8; 32];
-        let bytes_read = uart.read(&mut buf).await.unwrap();
-        uart.write_all(&buf[..bytes_read]).await.unwrap();
+        let bytes_read = uart_driver.read(&mut buf).await.unwrap();
+        uart_driver.write_all(&buf[..bytes_read]).await.unwrap();
     }
 }

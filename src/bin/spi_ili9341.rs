@@ -52,7 +52,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         xpt2046::Driver::new(spi_device)
     };
     let mut spi_buf = [0u8; 320];
-    let mut draw_target = {
+    let mut display = {
         let gpio_dc = gpio::Output::new(pin_display_dc, gpio::Level::Low);
         let gpio_rst = gpio::Output::new(pin_display_rst, gpio::Level::Low);
         let spi_device = {
@@ -72,11 +72,11 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .unwrap()
     };
     let _gpio_bl = gpio::Output::new(pin_display_bl, gpio::Level::High);
-    draw_target.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
+    display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
         Point::new(34, 68)
-    ).draw(&mut draw_target).unwrap();
+    ).draw(&mut display).unwrap();
     let text_style = eg::mono_font::MonoTextStyleBuilder::new()
         .font(&eg::mono_font::ascii::FONT_10X20)
         .text_color(eg::pixelcolor::Rgb565::GREEN)
@@ -85,7 +85,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         "Hello embedded_graphics \n + embassy + RP2040!",
         Point::new(20, 200),
         text_style
-    ).draw(&mut draw_target).unwrap();
+    ).draw(&mut display).unwrap();
     let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
         .fill_color(eg::pixelcolor::Rgb565::BLUE)
         .build();
@@ -94,7 +94,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             eg::primitives::Rectangle::new(
                 Point::new(x - 1, y - 1),
                 Size::new(3, 3)
-            ).into_styled(style_dot).draw(&mut draw_target).unwrap();
+            ).into_styled(style_dot).draw(&mut display).unwrap();
         }
     }
 }

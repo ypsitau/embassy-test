@@ -14,6 +14,7 @@ struct Context<'d> {
 }
 
 impl<'d> Context<'d> {
+    // Demonstrates on how to get peripheral tokens.
     fn new(pin_led: Peri<'d, impl gpio::Pin>, pin_button: Peri<'d, impl gpio::Pin>) -> Self {
         Self {
             gpio_led: gpio::Output::new(pin_led, gpio::Level::Low),
