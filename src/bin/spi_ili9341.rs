@@ -11,6 +11,7 @@ use mipidsi::options::{Orientation, Rotation};
 use {defmt_rtt as _, panic_probe as _};
 //use mipidsi::models::ST7789 as DisplayModel;
 use mipidsi::models::ILI9341Rgb565 as DisplayModel;
+use static_cell::StaticCell;
 
 rp::bind_interrupts!(struct Irqs {
     DMA_IRQ_0 =>
@@ -51,7 +52,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
         };
         xpt2046::Driver::new(spi_device)
     };
-    let mut spi_buf = [0u8; 320];
     let mut display = {
         let gpio_dc = rp::gpio::Output::new(pin_display_dc, rp::gpio::Level::Low);
         let gpio_rst = rp::gpio::Output::new(pin_display_rst, rp::gpio::Level::Low);
@@ -63,7 +63,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(
                 &spi_bus_shared, rp::gpio::Output::new(pin_display_cs, rp::gpio::Level::High), config)
         };
-        let display_interface = mipidsi::interface::SpiInterface::new(spi_device, gpio_dc, &mut spi_buf);
+        static SPI_BUF: StaticCell<[u8; 320]> = StaticCell::new();
+        let spi_buf = SPI_BUF.init([0u8; 320]);
+        let display_interface = mipidsi::interface::SpiInterface::new(spi_device, gpio_dc, spi_buf);
         mipidsi::Builder::new(DisplayModel, display_interface)
             .display_size(240, 320)
             .reset_pin(gpio_rst)

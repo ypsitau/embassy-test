@@ -1,5 +1,3 @@
-//! This example shows how to share (async) I2C and SPI buses between multiple devices.
-
 #![no_std]
 #![no_main]
 
