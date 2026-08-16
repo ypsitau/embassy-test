@@ -6,7 +6,7 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embassy_time::Timer;
-use embassy_usb::class as usb_class;
+use embassy_usb as usb;
 use usbd_hid::descriptor::SerializedDescriptor;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
@@ -20,7 +20,7 @@ async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
     let usb_driver = rp::usb::Driver::new(p.USB, Irqs);
     let mut usb_builder = {
-        let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
+        let mut config = usb::Config::new(0xc0de, 0xcafe);
         config.manufacturer = Some("Embassy");
         config.product = Some("HID keyboard-Mouse example");
         config.serial_number = Some("12345678");
@@ -34,7 +34,7 @@ async fn main(_spawner: Spawner) {
         static BOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
         static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
         static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
-        let mut usb_builder = embassy_usb::Builder::new(
+        let mut usb_builder = usb::Builder::new(
             usb_driver,
             config,
             CONFIG_DESCRIPTOR_BUF.init([0; 256]),
@@ -47,34 +47,34 @@ async fn main(_spawner: Spawner) {
         usb_builder
     };
     let (hid_keyboard_reader, mut hid_keyboard_writer) = {
-        static STATE: StaticCell<usb_class::hid::State> = StaticCell::new();
-        let config = embassy_usb::class::hid::Config {
+        static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
+        let config = usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::KeyboardReport::desc(),
             request_handler: None,
             poll_ms: 60,
             max_packet_size: 64,
-            hid_subclass: usb_class::hid::HidSubclass::Boot,
-            hid_boot_protocol: usb_class::hid::HidBootProtocol::Keyboard,
+            hid_subclass: usb::class::hid::HidSubclass::Boot,
+            hid_boot_protocol: usb::class::hid::HidBootProtocol::Keyboard,
         };
-        usb_class::hid::HidReaderWriter::<_, 1, 8>::new(
+        usb::class::hid::HidReaderWriter::<_, 1, 8>::new(
             &mut usb_builder,
-            STATE.init(usb_class::hid::State::new()),
+            STATE.init(usb::class::hid::State::new()),
             config,
         ).split()
     };
     let (hid_mouse_reader, mut hid_mouse_writer) = {
-        static STATE: StaticCell<usb_class::hid::State> = StaticCell::new();
-        let config = embassy_usb::class::hid::Config {
+        static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
+        let config = usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::MouseReport::desc(),
             request_handler: None,
             poll_ms: 60,
             max_packet_size: 64,
-            hid_subclass: usb_class::hid::HidSubclass::Boot,
-            hid_boot_protocol: usb_class::hid::HidBootProtocol::Mouse,
+            hid_subclass: usb::class::hid::HidSubclass::Boot,
+            hid_boot_protocol: usb::class::hid::HidBootProtocol::Mouse,
         };
-        usb_class::hid::HidReaderWriter::<_, 1, 8>::new(
+        usb::class::hid::HidReaderWriter::<_, 1, 8>::new(
             &mut usb_builder,
-            STATE.init(usb_class::hid::State::new()),
+            STATE.init(usb::class::hid::State::new()),
             config,
         ).split()
     };
@@ -152,49 +152,49 @@ struct HidRequestHandler {
 impl HidRequestHandler {
     fn new() -> Self {
         HidRequestHandler {
-            hid_protocol_mode: atomic::AtomicU8::new(usb_class::hid::HidProtocolMode::Boot as u8),
+            hid_protocol_mode: atomic::AtomicU8::new(usb::class::hid::HidProtocolMode::Boot as u8),
         }
     }
 }
 
-impl usb_class::hid::RequestHandler for HidRequestHandler {
+impl usb::class::hid::RequestHandler for HidRequestHandler {
     // Reads the value of report `id` into `buf` returning the size.
     // Returns `None` if `id` is invalid or no data is available.
-    fn get_report(&mut self, id: usb_class::hid::ReportId, _buf: &mut [u8]) -> Option<usize> {
+    fn get_report(&mut self, id: usb::class::hid::ReportId, _buf: &mut [u8]) -> Option<usize> {
         info!("hid::RequestHander.get_report(id: {:?})", id);
         None
     }
     // Sets the value of report `id` to `data`.
-    fn set_report(&mut self, id: usb_class::hid::ReportId, data: &[u8]) -> embassy_usb::control::OutResponse {
+    fn set_report(&mut self, id: usb::class::hid::ReportId, data: &[u8]) -> usb::control::OutResponse {
         info!("hid::RequestHandler.set_report(id: {:?}, data: {:02x}", id, data);
-        embassy_usb::control::OutResponse::Accepted
+        usb::control::OutResponse::Accepted
     }
     // Gets the current hid protocol.
     // Returns `Report` protocol by default.
-    fn get_protocol(&self) -> usb_class::hid::HidProtocolMode {
-        let mode = usb_class::hid::HidProtocolMode::from(self.hid_protocol_mode.load(atomic::Ordering::Relaxed));
+    fn get_protocol(&self) -> usb::class::hid::HidProtocolMode {
+        let mode = usb::class::hid::HidProtocolMode::from(self.hid_protocol_mode.load(atomic::Ordering::Relaxed));
         info!("hid::RequestHandler.get_protocol() -> {}", mode);
         mode
     }
     // Sets the current hid protocol to `protocol`.
     // Accepts only `Report` protocol by default.
-    fn set_protocol(&mut self, protocol: usb_class::hid::HidProtocolMode) -> embassy_usb::control::OutResponse {
+    fn set_protocol(&mut self, protocol: usb::class::hid::HidProtocolMode) -> usb::control::OutResponse {
         info!("hid::RequestHandler.set_protocol(protocol: {})", protocol);
         self.hid_protocol_mode.store(protocol as u8, atomic::Ordering::Relaxed);
-        embassy_usb::control::OutResponse::Accepted
+        usb::control::OutResponse::Accepted
     }
     // Get the idle rate for `id`.
     // If `id` is `None`, get the idle rate for all reports. Returning `None`
     // will reject the control request. Any duration at or above 1.024 seconds
     // or below 4ms will be returned as an indefinite idle rate.
-    fn get_idle_ms(&mut self, id: Option<usb_class::hid::ReportId>) -> Option<u32> {
+    fn get_idle_ms(&mut self, id: Option<usb::class::hid::ReportId>) -> Option<u32> {
         info!("hid::RequestHandler.get_idle_ms(id: {:?})", id);
         None
     }
     // Set the idle rate for `id` to `dur`.
     // If `id` is `None`, set the idle rate of all input reports to `dur`. If
     // an indefinite duration is requested, `dur` will be set to `u32::MAX`.
-    fn set_idle_ms(&mut self, id: Option<usb_class::hid::ReportId>, dur: u32) {
+    fn set_idle_ms(&mut self, id: Option<usb::class::hid::ReportId>, dur: u32) {
         info!("hid::RequestHandler.set_idle_ms(id: {:?}, dur: {:?})", id, dur);
     }
 }
@@ -214,25 +214,25 @@ impl DeviceHandler {
     }
 }
 
-impl embassy_usb::Handler for DeviceHandler {
+impl usb::Handler for DeviceHandler {
     /// Called when the USB device has been enabled or disabled.
     fn enabled(&mut self, enabled: bool) {
-        info!("embassy_usb::Handler.enabled({})", enabled);
+        info!("usb::Handler.enabled({})", enabled);
         self.configured.store(false, atomic::Ordering::Relaxed);
     }
     /// Called after a USB reset after the bus reset sequence is complete.
     fn reset(&mut self) {
-        info!("embassy_usb::Handler.reset()");
+        info!("usb::Handler.reset()");
         self.configured.store(false, atomic::Ordering::Relaxed);
     }
     /// Called when the host has set the address of the device to `addr`.
     fn addressed(&mut self, addr: u8) {
-        info!("embassy_usb::Handler.addressed(addr: {})", addr);
+        info!("usb::Handler.addressed(addr: {})", addr);
         self.configured.store(false, atomic::Ordering::Relaxed);
     }
     /// Called when the host has enabled or disabled the configuration of the device.
     fn configured(&mut self, configured: bool) {
-        info!("embassy_usb::Handler.configured(configured: {})", configured);
+        info!("usb::Handler.configured(configured: {})", configured);
         self.configured.store(configured, atomic::Ordering::Relaxed);
     }
 }
