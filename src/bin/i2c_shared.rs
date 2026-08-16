@@ -36,7 +36,7 @@ async fn main(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn task_a(i2c_bus: &'static I2c1Bus) {
-    let _sensor = DummyI2cDeviceDriver::new(I2cDevice::new(i2c_bus), 0xC0);
+    let _sensor = DummyDeviceDriver::new(I2cDevice::new(i2c_bus), 0xC0);
     loop {
         info!("i2c task A");
         Timer::after_secs(1).await;
@@ -45,7 +45,7 @@ async fn task_a(i2c_bus: &'static I2c1Bus) {
 
 #[embassy_executor::task]
 async fn task_b(i2c_bus: &'static I2c1Bus) {
-    let _sensor = DummyI2cDeviceDriver::new(I2cDevice::new(i2c_bus), 0xDE);
+    let _sensor = DummyDeviceDriver::new(I2cDevice::new(i2c_bus), 0xDE);
     loop {
         info!("i2c task B");
         Timer::after_secs(1).await;
@@ -63,11 +63,11 @@ async fn task_c(i2c_bus: &'static I2c1Bus) {
 
 }
 
-struct DummyI2cDeviceDriver<I2cDev: embedded_hal_async::i2c::I2c> {
+struct DummyDeviceDriver<I2cDev: embedded_hal_async::i2c::I2c> {
     _i2c_dev: I2cDev,
 }
     
-impl<I2cDev: embedded_hal_async::i2c::I2c> DummyI2cDeviceDriver<I2cDev> {
+impl<I2cDev: embedded_hal_async::i2c::I2c> DummyDeviceDriver<I2cDev> {
     fn new(i2c_dev: I2cDev, _address: u8) -> Self {
         Self { _i2c_dev: i2c_dev }
     }

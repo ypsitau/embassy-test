@@ -35,14 +35,14 @@ async fn main(spawner: Spawner) {
         static SPI_BUS: StaticCell<Spi1Bus> = StaticCell::new();
         SPI_BUS.init(Mutex::new(spi))
     };
-    spawner.spawn(spi_task_a(spi_bus, rp::gpio::Output::new(p.PIN_0, rp::gpio::Level::High)).unwrap());
-    spawner.spawn(spi_task_b(spi_bus, rp::gpio::Output::new(p.PIN_1, rp::gpio::Level::High)).unwrap());
+    spawner.spawn(task_a(spi_bus, rp::gpio::Output::new(p.PIN_0, rp::gpio::Level::High)).unwrap());
+    spawner.spawn(task_b(spi_bus, rp::gpio::Output::new(p.PIN_1, rp::gpio::Level::High)).unwrap());
 }
 
 #[embassy_executor::task]
-async fn spi_task_a(spi_bus: &'static Spi1Bus, cs: rp::gpio::Output<'static>) {
+async fn task_a(spi_bus: &'static Spi1Bus, cs: rp::gpio::Output<'static>) {
     let spi_dev = SpiDevice::new(spi_bus, cs);
-    let _sensor = DummySpiDeviceDriver::new(spi_dev);
+    let _sensor = DummyDeviceDriver::new(spi_dev);
     loop {
         info!("spi task A");
         Timer::after_secs(1).await;
@@ -50,20 +50,20 @@ async fn spi_task_a(spi_bus: &'static Spi1Bus, cs: rp::gpio::Output<'static>) {
 }
 
 #[embassy_executor::task]
-async fn spi_task_b(spi_bus: &'static Spi1Bus, cs: rp::gpio::Output<'static>) {
+async fn task_b(spi_bus: &'static Spi1Bus, cs: rp::gpio::Output<'static>) {
     let spi_dev = SpiDevice::new(spi_bus, cs);
-    let _sensor = DummySpiDeviceDriver::new(spi_dev);
+    let _sensor = DummyDeviceDriver::new(spi_dev);
     loop {
         info!("spi task B");
         Timer::after_secs(1).await;
     }
 }
 
-struct DummySpiDeviceDriver<SpiDev: embedded_hal_async::spi::SpiDevice> {
+struct DummyDeviceDriver<SpiDev: embedded_hal_async::spi::SpiDevice> {
     _spi_dev: SpiDev,
 }
 
-impl<SpiDev: embedded_hal_async::spi::SpiDevice> DummySpiDeviceDriver<SpiDev> {
+impl<SpiDev: embedded_hal_async::spi::SpiDevice> DummyDeviceDriver<SpiDev> {
     fn new(spi_dev: SpiDev) -> Self {
         Self { _spi_dev: spi_dev }
     }
