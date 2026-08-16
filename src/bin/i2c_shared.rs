@@ -22,8 +22,10 @@ rp::bind_interrupts!(struct Irqs {
 async fn main(spawner: Spawner) {
     let p = rp::init(Default::default());
     let i2c_bus = {
+        let scl = p.PIN_15;
+        let sda = p.PIN_14;
         let config = rp::i2c::Config::default();
-        let i2c = rp::i2c::I2c::new_async(p.I2C1, p.PIN_15, p.PIN_14, Irqs, config);
+        let i2c = rp::i2c::I2c::new_async(p.I2C1, scl, sda, Irqs, config);
         static I2C_BUS: StaticCell<I2c1Bus> = StaticCell::new();
         I2C_BUS.init(Mutex::new(i2c))
     };
@@ -58,7 +60,7 @@ async fn task_c(i2c_bus: &'static I2c1Bus) {
             .into_buffered_graphics_mode()
     };
     display.init().await.unwrap();
-    
+
 }
 
 struct DummyI2cDeviceDriver<I2cDev: embedded_hal_async::i2c::I2c> {

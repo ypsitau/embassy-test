@@ -25,20 +25,18 @@ rp::bind_interrupts!(struct Irqs {
 async fn main(spawner: Spawner) {
     let p = rp::init(Default::default());
     let spi_bus = {
-        let config = rp::spi::Config::default();
         let clk = p.PIN_10;
         let mosi = p.PIN_11;
         let miso = p.PIN_12;
         let tx_dma = p.DMA_CH0;
         let rx_dma = p.DMA_CH1;
+        let config = rp::spi::Config::default();
         let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
         static SPI_BUS: StaticCell<Spi1Bus> = StaticCell::new();
         SPI_BUS.init(Mutex::new(spi))
     };
-    let cs_a = rp::gpio::Output::new(p.PIN_0, rp::gpio::Level::High);
-    let cs_b = rp::gpio::Output::new(p.PIN_1, rp::gpio::Level::High);
-    spawner.spawn(spi_task_a(spi_bus, cs_a).unwrap());
-    spawner.spawn(spi_task_b(spi_bus, cs_b).unwrap());
+    spawner.spawn(spi_task_a(spi_bus, rp::gpio::Output::new(p.PIN_0, rp::gpio::Level::High)).unwrap());
+    spawner.spawn(spi_task_b(spi_bus, rp::gpio::Output::new(p.PIN_1, rp::gpio::Level::High)).unwrap());
 }
 
 #[embassy_executor::task]
