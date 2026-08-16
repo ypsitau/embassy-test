@@ -5,23 +5,21 @@ use core::fmt::Write;
 use core::sync::atomic;
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_rp::bind_interrupts;
-use embassy_rp::peripherals;
-use embassy_rp::usb;
+use embassy_rp as rp;
 use embassy_usb::class as usb_class;
 use embassy_usb::driver as usb_driver;
 use heapless::String;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => usb::InterruptHandler<peripherals::USB>;
+rp::bind_interrupts!(struct Irqs {
+    USBCTRL_IRQ => rp::usb::InterruptHandler<rp::peripherals::USB>;
 });
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-    let usb_driver = usb::Driver::new(p.USB, Irqs);
+    let p = rp::init(Default::default());
+    let usb_driver = rp::usb::Driver::new(p.USB, Irqs);
     let mut usb_builder = {
         let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
         config.manufacturer = Some("Embassy");
@@ -64,7 +62,7 @@ async fn main(_spawner: Spawner) {
     embassy_futures::join::join3(fut_usb, fut_echo_1, fut_echo_2).await;
 }
 
-type CdcAcmDriver<'d> = usb_class::cdc_acm::CdcAcmClass<'d, usb::Driver<'d, peripherals::USB>>;
+type CdcAcmDriver<'d> = usb_class::cdc_acm::CdcAcmClass<'d, rp::usb::Driver<'d, rp::peripherals::USB>>;
 
 async fn run_session(mut cdc_acm_driver: CdcAcmDriver<'_>, name: &str) -> Result<(), usb_driver::EndpointError> {
     let mut text_opening = String::<64>::new();

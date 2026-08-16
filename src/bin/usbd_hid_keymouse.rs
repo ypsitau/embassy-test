@@ -4,24 +4,21 @@
 use core::sync::atomic;
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_rp::bind_interrupts;
-use embassy_rp::gpio;
-use embassy_rp::peripherals;
-use embassy_rp::usb;
+use embassy_rp as rp;
 use embassy_time::Timer;
 use embassy_usb::class as usb_class;
 use usbd_hid::descriptor::SerializedDescriptor;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-bind_interrupts!(struct Irqs {
-    USBCTRL_IRQ => usb::InterruptHandler<peripherals::USB>;
+rp::bind_interrupts!(struct Irqs {
+    USBCTRL_IRQ => rp::usb::InterruptHandler<rp::peripherals::USB>;
 });
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-    let usb_driver = usb::Driver::new(p.USB, Irqs);
+    let p = rp::init(Default::default());
+    let usb_driver = rp::usb::Driver::new(p.USB, Irqs);
     let mut usb_builder = {
         let mut config = embassy_usb::Config::new(0xc0de, 0xcafe);
         config.manufacturer = Some("Embassy");
@@ -84,10 +81,10 @@ async fn main(_spawner: Spawner) {
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
     let fut_hid_keyboard_writer = async {
-        let mut gpio_button_left = gpio::Input::new(p.PIN_18, gpio::Pull::Up);
-        let mut gpio_button_up = gpio::Input::new(p.PIN_19, gpio::Pull::Up);
-        let mut gpio_button_down = gpio::Input::new(p.PIN_20, gpio::Pull::Up);
-        let mut gpio_button_right = gpio::Input::new(p.PIN_21, gpio::Pull::Up);
+        let mut gpio_button_left = rp::gpio::Input::new(p.PIN_18, rp::gpio::Pull::Up);
+        let mut gpio_button_up = rp::gpio::Input::new(p.PIN_19, rp::gpio::Pull::Up);
+        let mut gpio_button_down = rp::gpio::Input::new(p.PIN_20, rp::gpio::Pull::Up);
+        let mut gpio_button_right = rp::gpio::Input::new(p.PIN_21, rp::gpio::Pull::Up);
         loop {
             embassy_futures::select::select_array([
                 gpio_button_left.wait_for_any_edge(),
@@ -118,8 +115,8 @@ async fn main(_spawner: Spawner) {
         }
     };
     let fut_hid_mouse_writer = async {
-        let gpio_button_a = gpio::Input::new(p.PIN_16, gpio::Pull::Up);
-        let gpio_button_b = gpio::Input::new(p.PIN_17, gpio::Pull::Up);
+        let gpio_button_a = rp::gpio::Input::new(p.PIN_16, rp::gpio::Pull::Up);
+        let gpio_button_b = rp::gpio::Input::new(p.PIN_17, rp::gpio::Pull::Up);
         loop {
             let mouse_report = usbd_hid::descriptor::MouseReport {
                 buttons: 0,

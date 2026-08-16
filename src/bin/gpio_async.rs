@@ -3,22 +3,21 @@
 
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_rp::gpio;
-use embassy_rp::Peri;
+use embassy_rp as rp;
 use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _};
 
 struct Context<'d> {
-    gpio_led: gpio::Output<'d>,
-    gpio_button: gpio::Input<'d>,
+    gpio_led: rp::gpio::Output<'d>,
+    gpio_button: rp::gpio::Input<'d>,
 }
 
 impl<'d> Context<'d> {
     // Demonstrates on how to get peripheral tokens.
-    fn new(pin_led: Peri<'d, impl gpio::Pin>, pin_button: Peri<'d, impl gpio::Pin>) -> Self {
+    fn new(pin_led: rp::Peri<'d, impl rp::gpio::Pin>, pin_button: rp::Peri<'d, impl rp::gpio::Pin>) -> Self {
         Self {
-            gpio_led: gpio::Output::new(pin_led, gpio::Level::Low),
-            gpio_button: gpio::Input::new(pin_button, gpio::Pull::Up),
+            gpio_led: rp::gpio::Output::new(pin_led, rp::gpio::Level::Low),
+            gpio_button: rp::gpio::Input::new(pin_button, rp::gpio::Pull::Up),
         }
     }
     fn get_button_state(&self) -> bool {
@@ -37,7 +36,7 @@ impl<'d> Context<'d> {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
+    let p = rp::init(Default::default());
     let mut context = Context::new(p.PIN_25, p.PIN_15);
     loop {
         context.wait_for_button_changed().await;

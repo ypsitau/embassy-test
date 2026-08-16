@@ -3,7 +3,7 @@
 
 use core::fmt::Write;
 use embassy_executor::Spawner;
-use embassy_rp::{i2c, peripherals};
+use embassy_rp as rp;
 use embassy_time::Timer;
 use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
@@ -25,19 +25,19 @@ impl Direction {
     }
 }
 
-embassy_rp::bind_interrupts!(struct Irqs {
-    I2C0_IRQ => i2c::InterruptHandler<peripherals::I2C0>;
+rp::bind_interrupts!(struct Irqs {
+    I2C0_IRQ => rp::i2c::InterruptHandler<rp::peripherals::I2C0>;
 });
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
+    let p = rp::init(Default::default());
     let i2c0 = {
         let sda = p.PIN_16;
         let scl = p.PIN_17;
-        let mut config = i2c::Config::default();
+        let mut config = rp::i2c::Config::default();
         config.frequency = 400_000;
-        i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)
+        rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)
     };
     let mut display = {
         let interface = ssd1306::I2CDisplayInterface::new(i2c0);

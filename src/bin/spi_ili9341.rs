@@ -3,8 +3,8 @@
 
 use core::cell::RefCell;
 use defmt::info;
-use embassy_embedded_hal::shared_bus;
-use embassy_rp::gpio;
+use embassy_embedded_hal as hal;
+use embassy_rp as rp;
 use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
 use mipidsi::options::{Orientation, Rotation};
@@ -12,10 +12,10 @@ use {defmt_rtt as _, panic_probe as _};
 //use mipidsi::models::ST7789 as DisplayModel;
 use mipidsi::models::ILI9341Rgb565 as DisplayModel;
 
-embassy_rp::bind_interrupts!(struct Irqs {
+rp::bind_interrupts!(struct Irqs {
     DMA_IRQ_0 =>
-        embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH0>,
-        embassy_rp::dma::InterruptHandler<embassy_rp::peripherals::DMA_CH1>;
+        rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>,
+        rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
 });
 
 const SPI_FREQ_DISPLAY: u32 = 64_000_000;
@@ -23,7 +23,7 @@ const SPI_FREQ_TOUCH: u32 = 200_000;
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
-    let p = embassy_rp::init(Default::default());
+    let p = rp::init(Default::default());
     info!("Hello World!");
     let pin_spi_clk     = p.PIN_10;
     let pin_spi_mosi    = p.PIN_11;
@@ -36,32 +36,32 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let _pin_touch_irq  = p.PIN_15;
 
     let spi_bus_shared = {
-        //let spi_bus = embassy_rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
-        let spi_bus = embassy_rp::spi::Spi::new(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
+        //let spi_bus = rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
+        let spi_bus = rp::spi::Spi::new(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
         embassy_sync::blocking_mutex::Mutex::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _>::new(RefCell::new(spi_bus))
     };
     let mut touch = {
         let spi_device = {
-            let mut config = embassy_rp::spi::Config::default();
+            let mut config = rp::spi::Config::default();
             config.frequency = SPI_FREQ_TOUCH;
-            config.phase = embassy_rp::spi::Phase::CaptureOnSecondTransition;
-            config.polarity = embassy_rp::spi::Polarity::IdleHigh;
-            shared_bus::blocking::spi::SpiDeviceWithConfig::new(
-                &spi_bus_shared, gpio::Output::new(pin_touch_cs, gpio::Level::High), config)
+            config.phase = rp::spi::Phase::CaptureOnSecondTransition;
+            config.polarity = rp::spi::Polarity::IdleHigh;
+            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(
+                &spi_bus_shared, rp::gpio::Output::new(pin_touch_cs, rp::gpio::Level::High), config)
         };
         xpt2046::Driver::new(spi_device)
     };
     let mut spi_buf = [0u8; 320];
     let mut display = {
-        let gpio_dc = gpio::Output::new(pin_display_dc, gpio::Level::Low);
-        let gpio_rst = gpio::Output::new(pin_display_rst, gpio::Level::Low);
+        let gpio_dc = rp::gpio::Output::new(pin_display_dc, rp::gpio::Level::Low);
+        let gpio_rst = rp::gpio::Output::new(pin_display_rst, rp::gpio::Level::Low);
         let spi_device = {
-            let mut config = embassy_rp::spi::Config::default();
+            let mut config = rp::spi::Config::default();
             config.frequency = SPI_FREQ_DISPLAY;
-            config.phase = embassy_rp::spi::Phase::CaptureOnSecondTransition;
-            config.polarity = embassy_rp::spi::Polarity::IdleHigh;
-            shared_bus::blocking::spi::SpiDeviceWithConfig::new(
-                &spi_bus_shared, gpio::Output::new(pin_display_cs, gpio::Level::High), config)
+            config.phase = rp::spi::Phase::CaptureOnSecondTransition;
+            config.polarity = rp::spi::Polarity::IdleHigh;
+            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(
+                &spi_bus_shared, rp::gpio::Output::new(pin_display_cs, rp::gpio::Level::High), config)
         };
         let display_interface = mipidsi::interface::SpiInterface::new(spi_device, gpio_dc, &mut spi_buf);
         mipidsi::Builder::new(DisplayModel, display_interface)
@@ -71,7 +71,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .init(&mut embassy_time::Delay)
             .unwrap()
     };
-    let _gpio_bl = gpio::Output::new(pin_display_bl, gpio::Level::High);
+    let _gpio_bl = rp::gpio::Output::new(pin_display_bl, rp::gpio::Level::High);
     display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),

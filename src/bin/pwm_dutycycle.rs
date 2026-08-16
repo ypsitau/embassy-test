@@ -4,20 +4,19 @@
 
 //use defmt::*;
 use embassy_executor::Spawner;
-use embassy_rp::pwm;
-use embassy_rp::Peri;
+use embassy_rp as rp;
 use embassy_rp::pwm::SetDutyCycle as _;
 use fixed::traits::ToFixed as _;
 use {defmt_rtt as _, panic_probe as _};
 
 pub struct PwmSlice<'d> {
-    pub pwm: pwm::Pwm<'d>,
-    pub config: pwm::Config,
+    pub pwm: rp::pwm::Pwm<'d>,
+    pub config: rp::pwm::Config,
 }
 
 impl<'d> PwmSlice<'d> {
-    pub fn new<T: pwm::Slice>(slice: Peri<'d, T>, a: Peri<'d, impl pwm::ChannelAPin<T>>, b: Peri<'d, impl pwm::ChannelBPin<T>>, config: pwm::Config) -> Self {
-        let pwm = pwm::Pwm::new_output_ab(slice, a, b, config.clone());
+    pub fn new<T: rp::pwm::Slice>(slice: rp::Peri<'d, T>, a: rp::Peri<'d, impl rp::pwm::ChannelAPin<T>>, b: rp::Peri<'d, impl rp::pwm::ChannelBPin<T>>, config: rp::pwm::Config) -> Self {
+        let pwm = rp::pwm::Pwm::new_output_ab(slice, a, b, config.clone());
         Self { pwm, config }
     }
     pub fn set_duty_cycle_a(&mut self, duty: u16) {
@@ -32,8 +31,8 @@ impl<'d> PwmSlice<'d> {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-    let mut config = pwm::Config::default();
+    let p = rp::init(Default::default());
+    let mut config = rp::pwm::Config::default();
     let (divider, top) = pwm_calc_divider_and_top(1000);
     config.divider = divider.to_fixed();
     config.top = top;
@@ -78,7 +77,7 @@ async fn main(_spawner: Spawner) {
 }
 
 fn pwm_calc_divider_and_top(freq: u32) -> (f32, u16) {
-    let clk_sys_freq = embassy_rp::clocks::clk_sys_freq();
+    let clk_sys_freq = rp::clocks::clk_sys_freq();
     let mut best_divider = 1.0_f32;
     let mut best_top = u16::MAX;
     if freq == 0 {
