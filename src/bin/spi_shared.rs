@@ -6,45 +6,43 @@
 use defmt::*;
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice;
 use embassy_executor::Spawner;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, SPI1};
-use embassy_rp::spi::{self, Spi};
-use embassy_rp::{bind_interrupts, dma};
+use embassy_rp as rp;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::Timer;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-type Spi1Bus = Mutex<NoopRawMutex, Spi<'static, SPI1, spi::Async>>;
+type Spi1Bus = Mutex<NoopRawMutex, rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>;
 
-bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+rp::bind_interrupts!(struct Irqs {
+    DMA_IRQ_0 =>
+        rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>,
+        rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
 });
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-    info!("Here we go!");
-
-    // Shared SPI bus
-    let spi_cfg = spi::Config::default();
-    let spi = Spi::new(
-        p.SPI1, p.PIN_10, p.PIN_11, p.PIN_12, p.DMA_CH0, p.DMA_CH1, Irqs, spi_cfg,
-    );
-    static SPI_BUS: StaticCell<Spi1Bus> = StaticCell::new();
-    let spi_bus = SPI_BUS.init(Mutex::new(spi));
-
-    // Chip select pins for the SPI devices
-    let cs_a = Output::new(p.PIN_0, Level::High);
-    let cs_b = Output::new(p.PIN_1, Level::High);
-
+    let p = rp::init(Default::default());
+    let spi_bus = {
+        let config = rp::spi::Config::default();
+        let clk = p.PIN_10;
+        let mosi = p.PIN_11;
+        let miso = p.PIN_12;
+        let tx_dma = p.DMA_CH0;
+        let rx_dma = p.DMA_CH1;
+        let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
+        static SPI_BUS: StaticCell<Spi1Bus> = StaticCell::new();
+        SPI_BUS.init(Mutex::new(spi))
+    };
+    let cs_a = rp::gpio::Output::new(p.PIN_0, rp::gpio::Level::High);
+    let cs_b = rp::gpio::Output::new(p.PIN_1, rp::gpio::Level::High);
     spawner.spawn(spi_task_a(spi_bus, cs_a).unwrap());
     spawner.spawn(spi_task_b(spi_bus, cs_b).unwrap());
 }
 
 #[embassy_executor::task]
-async fn spi_task_a(spi_bus: &'static Spi1Bus, cs: Output<'static>) {
+async fn spi_task_a(spi_bus: &'static Spi1Bus, cs: rp::gpio::Output<'static>) {
     let spi_dev = SpiDevice::new(spi_bus, cs);
     let _sensor = DummySpiDeviceDriver::new(spi_dev);
     loop {
@@ -54,7 +52,7 @@ async fn spi_task_a(spi_bus: &'static Spi1Bus, cs: Output<'static>) {
 }
 
 #[embassy_executor::task]
-async fn spi_task_b(spi_bus: &'static Spi1Bus, cs: Output<'static>) {
+async fn spi_task_b(spi_bus: &'static Spi1Bus, cs: rp::gpio::Output<'static>) {
     let spi_dev = SpiDevice::new(spi_bus, cs);
     let _sensor = DummySpiDeviceDriver::new(spi_dev);
     loop {
@@ -63,13 +61,12 @@ async fn spi_task_b(spi_bus: &'static Spi1Bus, cs: Output<'static>) {
     }
 }
 
-// Dummy SPI device driver, using `embedded-hal-async`
-struct DummySpiDeviceDriver<SPI: embedded_hal_async::spi::SpiDevice> {
-    _spi: SPI,
+struct DummySpiDeviceDriver<SpiDev: embedded_hal_async::spi::SpiDevice> {
+    _spi_dev: SpiDev,
 }
 
-impl<SPI: embedded_hal_async::spi::SpiDevice> DummySpiDeviceDriver<SPI> {
-    fn new(spi_dev: SPI) -> Self {
-        Self { _spi: spi_dev }
+impl<SpiDev: embedded_hal_async::spi::SpiDevice> DummySpiDeviceDriver<SpiDev> {
+    fn new(spi_dev: SpiDev) -> Self {
+        Self { _spi_dev: spi_dev }
     }
 }
