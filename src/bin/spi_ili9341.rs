@@ -2,16 +2,15 @@
 #![no_main]
 
 use core::cell::RefCell;
-use defmt::info;
 use embassy_embedded_hal as hal;
 use embassy_rp as rp;
 use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
 use mipidsi::options::{Orientation, Rotation};
-use {defmt_rtt as _, panic_probe as _};
 //use mipidsi::models::ST7789 as DisplayModel;
 use mipidsi::models::ILI9341Rgb565 as DisplayModel;
 use static_cell::StaticCell;
+use {defmt_rtt as _, panic_probe as _};
 
 rp::bind_interrupts!(struct Irqs {
     DMA_IRQ_0 =>
@@ -19,52 +18,48 @@ rp::bind_interrupts!(struct Irqs {
         rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
 });
 
-const SPI_FREQ_DISPLAY: u32 = 64_000_000;
-const SPI_FREQ_TOUCH: u32 = 200_000;
-
 type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
     embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>;
+    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = rp::init(Default::default());
-    info!("Hello World!");
-    let pin_spi_clk     = p.PIN_10;
-    let pin_spi_mosi    = p.PIN_11;
-    let pin_spi_miso    = p.PIN_12;
-    let pin_display_rst = p.PIN_6;
-    let pin_display_dc  = p.PIN_7;
-    let pin_display_cs  = p.PIN_8;
-    let pin_display_bl  = p.PIN_9;
-    let pin_touch_cs    = p.PIN_14;
-    let _pin_touch_irq  = p.PIN_15;
     let mutex_spi = {
-        //let spi = rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
-        let spi_bus = rp::spi::Spi::new(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
-        embassy_sync::blocking_mutex::Mutex::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _>::new(RefCell::new(spi_bus))
+        let clk = p.PIN_10;
+        let mosi = p.PIN_11;
+        let miso = p.PIN_12;
+        //let tx_dma = p.DMA_CH0;
+        //let rx_dma = p.DMA_CH1;
+        let config = rp::spi::Config::default();
+        let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
+        //let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
+        MutexSPI1::new(RefCell::new(spi))
     };
     let mut touch = {
         let spi_device = {
+            let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
+            let _pin_touch_irq  = p.PIN_15;
             let mut config = rp::spi::Config::default();
-            config.frequency = SPI_FREQ_TOUCH;
+            config.frequency = 200_000;
             config.phase = rp::spi::Phase::CaptureOnSecondTransition;
             config.polarity = rp::spi::Polarity::IdleHigh;
-            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(
-                &mutex_spi, rp::gpio::Output::new(pin_touch_cs, rp::gpio::Level::High), config)
+            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
         xpt2046::Driver::new(spi_device)
     };
     let mut display = {
-        let gpio_dc = rp::gpio::Output::new(pin_display_dc, rp::gpio::Level::Low);
-        let gpio_rst = rp::gpio::Output::new(pin_display_rst, rp::gpio::Level::Low);
+        let gpio_rst = rp::gpio::Output::new(p.PIN_6, rp::gpio::Level::Low);
+        let gpio_dc = rp::gpio::Output::new(p.PIN_7, rp::gpio::Level::Low);
+        let gpio_cs = rp::gpio::Output::new(p.PIN_8, rp::gpio::Level::High);
+        static GPIO_BL: StaticCell<rp::gpio::Output<'static>> = StaticCell::new();
+        let _gpio_bl = GPIO_BL.init(rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High));
         let spi_device = {
             let mut config = rp::spi::Config::default();
-            config.frequency = SPI_FREQ_DISPLAY;
+            config.frequency = 64_000_000;
             config.phase = rp::spi::Phase::CaptureOnSecondTransition;
             config.polarity = rp::spi::Polarity::IdleHigh;
-            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(
-                &mutex_spi, rp::gpio::Output::new(pin_display_cs, rp::gpio::Level::High), config)
+            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
         static SPI_BUF: StaticCell<[u8; 320]> = StaticCell::new();
         let spi_buf = SPI_BUF.init([0u8; 320]);
@@ -76,7 +71,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .init(&mut embassy_time::Delay)
             .unwrap()
     };
-    let _gpio_bl = rp::gpio::Output::new(pin_display_bl, rp::gpio::Level::High);
+    //let _gpio_bl = rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High);
     display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
@@ -95,7 +90,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         .fill_color(eg::pixelcolor::Rgb565::BLUE)
         .build();
     loop {
-        if let Some((x, y)) = touch.read() {
+        if let Some((x, y)) = touch.read_pos() {
             eg::primitives::Rectangle::new(
                 Point::new(x - 1, y - 1),
                 Size::new(3, 3)
@@ -105,7 +100,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 }
 
 mod xpt2046 {
-    use embedded_hal_1::spi;
+    use embedded_hal_1 as hal;
     struct Calibration {
         xraw_max: i32,
         xraw_min: i32,
@@ -114,7 +109,6 @@ mod xpt2046 {
         x_range: i32,
         y_range: i32,
     }
-
     impl Calibration {
         fn calc_pos(&self, xraw: i32, yraw: i32) -> Option<(i32, i32)> {
             let x = ((xraw - self.xraw_min) * self.x_range / (self.xraw_max - self.xraw_min)).clamp(0, self.x_range);
@@ -122,7 +116,6 @@ mod xpt2046 {
             if x == 0 && y == 0 { None } else { Some((x, y)) }
         }
     }
-
     const CALIBRATION: Calibration = Calibration {
         xraw_min: 340,
         xraw_max: 3880,
@@ -131,24 +124,21 @@ mod xpt2046 {
         x_range: 320,
         y_range: 240,
     };
-
-    pub struct Driver<SPI> {
-        spi: SPI,
+    pub struct Driver<SpiDevice> {
+        spi_device: SpiDevice,
     }
-
-    impl<SPI: spi::SpiDevice> Driver<SPI> {
-        pub fn new(spi: SPI) -> Self {
-            Self { spi }
+    impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
+        pub fn new(spi_device: SpiDevice) -> Self {
+            Self { spi_device }
         }
-
-        pub fn read(&mut self) -> Option<(i32, i32)> {
+        pub fn read_pos(&mut self) -> Option<(i32, i32)> {
             let mut xbytes = [0u8; 2];
             let mut ybytes = [0u8; 2];
-            self.spi.transaction(&mut [
-                spi::Operation::Write(&[0x90]),
-                spi::Operation::Read(&mut xbytes),
-                spi::Operation::Write(&[0xd0]),
-                spi::Operation::Read(&mut ybytes),
+            self.spi_device.transaction(&mut [
+                hal::spi::Operation::Write(&[0x90]),
+                hal::spi::Operation::Read(&mut xbytes),
+                hal::spi::Operation::Write(&[0xd0]),
+                hal::spi::Operation::Read(&mut ybytes),
             ]).unwrap();
             let xraw = (u16::from_be_bytes(xbytes) >> 3) as i32;
             let yraw = (u16::from_be_bytes(ybytes) >> 3) as i32;
