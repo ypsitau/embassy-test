@@ -22,6 +22,10 @@ rp::bind_interrupts!(struct Irqs {
 const SPI_FREQ_DISPLAY: u32 = 64_000_000;
 const SPI_FREQ_TOUCH: u32 = 200_000;
 
+type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
+    embassy_sync::blocking_mutex::raw::NoopRawMutex,
+    rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>;
+
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = rp::init(Default::default());
@@ -35,9 +39,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let pin_display_bl  = p.PIN_9;
     let pin_touch_cs    = p.PIN_14;
     let _pin_touch_irq  = p.PIN_15;
-
-    let spi_bus_shared = {
-        //let spi_bus = rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
+    let mutex_spi = {
+        //let spi = rp::spi::Spi::new_blocking(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, Default::default());
         let spi_bus = rp::spi::Spi::new(p.SPI1, pin_spi_clk, pin_spi_mosi, pin_spi_miso, p.DMA_CH0, p.DMA_CH1, Irqs, Default::default());
         embassy_sync::blocking_mutex::Mutex::<embassy_sync::blocking_mutex::raw::NoopRawMutex, _>::new(RefCell::new(spi_bus))
     };
@@ -48,7 +51,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.phase = rp::spi::Phase::CaptureOnSecondTransition;
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(
-                &spi_bus_shared, rp::gpio::Output::new(pin_touch_cs, rp::gpio::Level::High), config)
+                &mutex_spi, rp::gpio::Output::new(pin_touch_cs, rp::gpio::Level::High), config)
         };
         xpt2046::Driver::new(spi_device)
     };
@@ -61,7 +64,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.phase = rp::spi::Phase::CaptureOnSecondTransition;
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(
-                &spi_bus_shared, rp::gpio::Output::new(pin_display_cs, rp::gpio::Level::High), config)
+                &mutex_spi, rp::gpio::Output::new(pin_display_cs, rp::gpio::Level::High), config)
         };
         static SPI_BUF: StaticCell<[u8; 320]> = StaticCell::new();
         let spi_buf = SPI_BUF.init([0u8; 320]);

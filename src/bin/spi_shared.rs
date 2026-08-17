@@ -2,7 +2,8 @@
 #![no_main]
 
 use defmt::*;
-use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice; // impl embedded_hal::spi::SpiDevice
+use embassy_embedded_hal as hal;
+//use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice; // impl embedded_hal::spi::SpiDevice
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embassy_time::Timer;
@@ -38,7 +39,8 @@ async fn main(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn task_a(mutex_spi1: &'static MutexSPI1, cs: rp::gpio::Output<'static>) {
-    let _sensor = DummyDeviceDriver::new(SpiDevice::new(mutex_spi1, cs));
+    let spi_device = hal::shared_bus::asynch::spi::SpiDevice::new(mutex_spi1, cs)
+    let _sensor = DummyDeviceDriver::new(spi_device);
     loop {
         info!("spi task A");
         Timer::after_secs(1).await;
@@ -47,7 +49,8 @@ async fn task_a(mutex_spi1: &'static MutexSPI1, cs: rp::gpio::Output<'static>) {
 
 #[embassy_executor::task]
 async fn task_b(mutex_spi1: &'static MutexSPI1, cs: rp::gpio::Output<'static>) {
-    let _sensor = DummyDeviceDriver::new(SpiDevice::new(mutex_spi1, cs));
+    let spi_device = hal::shared_bus::asynch::spi::SpiDevice::new(mutex_spi1, cs)
+    let _sensor = DummyDeviceDriver::new(spi_device);
     loop {
         info!("spi task B");
         Timer::after_secs(1).await;
@@ -59,7 +62,7 @@ struct DummyDeviceDriver<SpiDevice> {
 }
 
 impl<SpiDevice: embedded_hal_async::spi::SpiDevice> DummyDeviceDriver<SpiDevice> {
-    fn new(spi_dev: SpiDevice) -> Self {
-        Self { _spi_dev: spi_dev }
+    fn new(spi_device: SpiDevice) -> Self {
+        Self { _spi_dev: spi_device }
     }
 }
