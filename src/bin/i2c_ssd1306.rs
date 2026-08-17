@@ -2,6 +2,7 @@
 #![no_main]
 
 use core::fmt::Write;
+use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;   // impl embedded_hal::i2c::I2c
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embassy_time::Timer;
@@ -9,6 +10,7 @@ use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
 use heapless::String;
 use ssd1306::prelude::*;
+use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 enum Direction {
@@ -25,6 +27,10 @@ impl Direction {
     }
 }
 
+type MutexI2C0 = embassy_sync::mutex::Mutex<
+    embassy_sync::blocking_mutex::raw::NoopRawMutex,
+    rp::i2c::I2c<'static, rp::peripherals::I2C0, rp::i2c::Async>>;
+
 rp::bind_interrupts!(struct Irqs {
     I2C0_IRQ => rp::i2c::InterruptHandler<rp::peripherals::I2C0>;
 });
@@ -32,15 +38,16 @@ rp::bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
-    let i2c0 = {
+    let mutex_i2c0 = {
         let sda = p.PIN_16;
         let scl = p.PIN_17;
         let mut config = rp::i2c::Config::default();
         config.frequency = 400_000;
-        rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)
+        static MUTEX_I2C0: StaticCell<MutexI2C0> = StaticCell::new();
+        MUTEX_I2C0.init(MutexI2C0::new(rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)))
     };
     let mut display = {
-        let interface = ssd1306::I2CDisplayInterface::new(i2c0);
+        let interface = ssd1306::I2CDisplayInterface::new(I2cDevice::new(mutex_i2c0));
         ssd1306::Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode()
     };

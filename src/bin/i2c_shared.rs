@@ -5,14 +5,13 @@ use defmt::*;
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_executor::Spawner;
 use embassy_rp as rp;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::mutex::Mutex;
 use embassy_time::Timer;
 use static_cell::StaticCell;
-use ssd1306::prelude::*;
 use {defmt_rtt as _, panic_probe as _};
 
-type I2c1Bus = Mutex<NoopRawMutex, rp::i2c::I2c<'static, rp::peripherals::I2C1, rp::i2c::Async>>;
+type MutexI2C1 = embassy_sync::mutex::Mutex<
+    embassy_sync::blocking_mutex::raw::NoopRawMutex,
+    rp::i2c::I2c<'static, rp::peripherals::I2C1, rp::i2c::Async>>;
 
 rp::bind_interrupts!(struct Irqs {
     I2C1_IRQ => rp::i2c::InterruptHandler<rp::peripherals::I2C1>;
@@ -21,22 +20,20 @@ rp::bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = rp::init(Default::default());
-    let i2c_bus = {
+    let mutex_i2c1 = {
         let scl = p.PIN_15;
         let sda = p.PIN_14;
         let config = rp::i2c::Config::default();
-        let i2c = rp::i2c::I2c::new_async(p.I2C1, scl, sda, Irqs, config);
-        static I2C_BUS: StaticCell<I2c1Bus> = StaticCell::new();
-        I2C_BUS.init(Mutex::new(i2c))
+        static MUTEX_I2C1: StaticCell<MutexI2C1> = StaticCell::new();
+        MUTEX_I2C1.init(MutexI2C1::new(rp::i2c::I2c::new_async(p.I2C1, scl, sda, Irqs, config)))
     };
-    spawner.spawn(task_a(i2c_bus).unwrap());
-    spawner.spawn(task_b(i2c_bus).unwrap());
-    spawner.spawn(task_c(i2c_bus).unwrap());
+    spawner.spawn(task_a(mutex_i2c1).unwrap());
+    spawner.spawn(task_b(mutex_i2c1).unwrap());
 }
 
 #[embassy_executor::task]
-async fn task_a(i2c_bus: &'static I2c1Bus) {
-    let _sensor = DummyDeviceDriver::new(I2cDevice::new(i2c_bus), 0xC0);
+async fn task_a(mutex_i2c1: &'static MutexI2C1) {
+    let _sensor = DummyDeviceDriver::new(I2cDevice::new(mutex_i2c1), 0xC0);
     loop {
         info!("i2c task A");
         Timer::after_secs(1).await;
@@ -44,31 +41,20 @@ async fn task_a(i2c_bus: &'static I2c1Bus) {
 }
 
 #[embassy_executor::task]
-async fn task_b(i2c_bus: &'static I2c1Bus) {
-    let _sensor = DummyDeviceDriver::new(I2cDevice::new(i2c_bus), 0xDE);
+async fn task_b(mutex_i2c1: &'static MutexI2C1) {
+    let _sensor = DummyDeviceDriver::new(I2cDevice::new(mutex_i2c1), 0xDE);
     loop {
         info!("i2c task B");
         Timer::after_secs(1).await;
     }
 }
 
-#[embassy_executor::task]
-async fn task_c(i2c_bus: &'static I2c1Bus) {
-    let mut display = {
-        let interface = ssd1306::I2CDisplayInterface::new(I2cDevice::new(i2c_bus));
-        ssd1306::Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
-            .into_buffered_graphics_mode()
-    };
-    display.init().await.unwrap();
-
-}
-
-struct DummyDeviceDriver<I2cDev: embedded_hal_async::i2c::I2c> {
-    _i2c_dev: I2cDev,
+struct DummyDeviceDriver<I2c> {
+    _i2c: I2c,
 }
     
-impl<I2cDev: embedded_hal_async::i2c::I2c> DummyDeviceDriver<I2cDev> {
-    fn new(i2c_dev: I2cDev, _address: u8) -> Self {
-        Self { _i2c_dev: i2c_dev }
+impl<I2c: embedded_hal_async::i2c::I2c> DummyDeviceDriver<I2c> {
+    fn new(i2c: I2c, _address: u8) -> Self {
+        Self { _i2c: i2c }
     }
 }
