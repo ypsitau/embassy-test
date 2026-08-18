@@ -18,9 +18,13 @@ rp::bind_interrupts!(struct Irqs {
         rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
 });
 
+//type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
+//    embassy_sync::blocking_mutex::raw::NoopRawMutex,
+//    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
+
 type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
     embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
+    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
@@ -30,10 +34,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let mosi = p.PIN_11;
         let miso = p.PIN_12;
         let config = rp::spi::Config::default();
-        //let tx_dma = p.DMA_CH0;
-        //let rx_dma = p.DMA_CH1;
-        //let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
-        let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
+        let tx_dma = p.DMA_CH0;
+        let rx_dma = p.DMA_CH1;
+        let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
+        //let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
         MutexSPI1::new(RefCell::new(spi))
     };
     let mut touch = {
