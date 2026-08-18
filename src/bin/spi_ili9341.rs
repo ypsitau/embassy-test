@@ -2,6 +2,8 @@
 #![no_main]
 
 use core::cell::RefCell;
+use embassy_time as time;
+use embassy_futures as futures;
 use embassy_embedded_hal as hal;
 use embassy_rp as rp;
 use embedded_graphics as eg;
@@ -22,10 +24,19 @@ use {defmt_rtt as _, panic_probe as _};
 //    embassy_sync::blocking_mutex::raw::NoopRawMutex,
 //    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
 
+#[derive(Debug, Clone, Copy)]
+struct Pos {
+    x: i32,
+    y: i32,
+}
+
+type MutexPos = embassy_sync::blocking_mutex::Mutex<
+    embassy_sync::blocking_mutex::raw::NoopRawMutex,
+    RefCell<Option<Pos>>>;
+
 type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
     embassy_sync::blocking_mutex::raw::NoopRawMutex,
     RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
-
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
@@ -93,14 +104,35 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
         .fill_color(eg::pixelcolor::Rgb565::BLUE)
         .build();
-    loop {
-        if let Some((x, y)) = touch.read_pos() {
-            eg::primitives::Rectangle::new(
-                Point::new(x - 1, y - 1),
-                Size::new(3, 3)
-            ).into_styled(style_dot).draw(&mut display).unwrap();
+    let mutex_pos = MutexPos::new(RefCell::new(None));
+    let fut_main = async {
+        loop {
+            mutex_pos.lock(|pos| {
+                if let Some(pos) = *pos.borrow() {
+                    eg::primitives::Rectangle::new(
+                        Point::new(pos.x - 1, pos.y - 1),
+                        Size::new(3, 3)
+                    ).into_styled(style_dot).draw(&mut display).unwrap();
+                }
+            });
+            time::Timer::after_millis(100).await;
         }
-    }
+    };
+    let fut_touch = async {
+        loop {
+            if let Some((x, y)) = touch.read_pos() {
+                mutex_pos.lock(|pos| {
+                    *pos.borrow_mut() = Some(Pos { x, y });
+                });
+            } else {
+                mutex_pos.lock(|pos| {
+                    *pos.borrow_mut() = None;
+                });
+            }
+            time::Timer::after_millis(10).await;
+        }
+    };
+    futures::join::join(fut_main, fut_touch).await;
 }
 
 mod xpt2046 {
@@ -135,7 +167,7 @@ mod xpt2046 {
         pub fn new(spi_device: SpiDevice) -> Self {
             Self { spi_device }
         }
-        pub fn read_pos2(&mut self) -> Option<(i32, i32)> {
+        pub fn read_pos(&mut self) -> Option<(i32, i32)> {
             let mut xbytes = [0u8; 2];
             let mut ybytes = [0u8; 2];
             self.spi_device.transaction(&mut [
@@ -148,27 +180,5 @@ mod xpt2046 {
             let yraw = (u16::from_be_bytes(ybytes) >> 3) as i32;
             CALIBRATION.calc_pos(xraw, yraw)
         }
-        pub fn read_pos(&mut self) -> Option<(i32, i32)> {
-            let mut x = [0; 2];
-            let mut y = [0; 2];
-            self.spi_device
-                .transaction(&mut [
-                    hal::spi::Operation::Write(&[0x90]),
-                    hal::spi::Operation::Read(&mut x),
-                    hal::spi::Operation::Write(&[0xd0]),
-                    hal::spi::Operation::Read(&mut y),
-                ])
-                .unwrap();
-
-            let x = (u16::from_be_bytes(x) >> 3) as i32;
-            let y = (u16::from_be_bytes(y) >> 3) as i32;
-
-            let cal = &CALIBRATION;
-
-            let x = ((x - cal.xraw_min) * cal.x_range / (cal.xraw_max - cal.xraw_min)).clamp(0, cal.x_range);
-            let y = ((y - cal.yraw_min) * cal.y_range / (cal.yraw_max - cal.yraw_min)).clamp(0, cal.y_range);
-            if x == 0 && y == 0 { None } else { Some((x, y)) }
-        }
-
     }
 }
