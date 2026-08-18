@@ -29,11 +29,11 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let clk = p.PIN_10;
         let mosi = p.PIN_11;
         let miso = p.PIN_12;
+        let config = rp::spi::Config::default();
         //let tx_dma = p.DMA_CH0;
         //let rx_dma = p.DMA_CH1;
-        let config = rp::spi::Config::default();
-        let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
         //let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
+        let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
         MutexSPI1::new(RefCell::new(spi))
     };
     let mut touch = {
