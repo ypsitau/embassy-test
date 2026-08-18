@@ -39,7 +39,7 @@ async fn main(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn task_a(mutex_spi1: &'static MutexSPI1, cs: rp::gpio::Output<'static>) {
-    let spi_device = hal::shared_bus::asynch::spi::SpiDevice::new(mutex_spi1, cs)
+    let spi_device = hal::shared_bus::asynch::spi::SpiDevice::new(mutex_spi1, cs);
     let _sensor = DummyDeviceDriver::new(spi_device);
     loop {
         info!("spi task A");
@@ -49,7 +49,7 @@ async fn task_a(mutex_spi1: &'static MutexSPI1, cs: rp::gpio::Output<'static>) {
 
 #[embassy_executor::task]
 async fn task_b(mutex_spi1: &'static MutexSPI1, cs: rp::gpio::Output<'static>) {
-    let spi_device = hal::shared_bus::asynch::spi::SpiDevice::new(mutex_spi1, cs)
+    let spi_device = hal::shared_bus::asynch::spi::SpiDevice::new(mutex_spi1, cs);
     let _sensor = DummyDeviceDriver::new(spi_device);
     loop {
         info!("spi task B");

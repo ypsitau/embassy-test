@@ -12,19 +12,20 @@ use mipidsi::models::ILI9341Rgb565 as DisplayModel;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-rp::bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 =>
-        rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>,
-        rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
-});
-
+//rp::bind_interrupts!(struct Irqs {
+//    DMA_IRQ_0 =>
+//        rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>,
+//        rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
+//});
+//
 //type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
 //    embassy_sync::blocking_mutex::raw::NoopRawMutex,
-//    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
+//    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
 
 type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
     embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
+    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
+
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
@@ -34,10 +35,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let mosi = p.PIN_11;
         let miso = p.PIN_12;
         let config = rp::spi::Config::default();
-        let tx_dma = p.DMA_CH0;
-        let rx_dma = p.DMA_CH1;
-        let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
-        //let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
+        //let tx_dma = p.DMA_CH0;
+        //let rx_dma = p.DMA_CH1;
+        //let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
+        let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
         MutexSPI1::new(RefCell::new(spi))
     };
     let mut touch = {
@@ -75,7 +76,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .init(&mut embassy_time::Delay)
             .unwrap()
     };
-    //let _gpio_bl = rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High);
     display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
@@ -135,7 +135,7 @@ mod xpt2046 {
         pub fn new(spi_device: SpiDevice) -> Self {
             Self { spi_device }
         }
-        pub fn read_pos(&mut self) -> Option<(i32, i32)> {
+        pub fn read_pos2(&mut self) -> Option<(i32, i32)> {
             let mut xbytes = [0u8; 2];
             let mut ybytes = [0u8; 2];
             self.spi_device.transaction(&mut [
@@ -148,5 +148,27 @@ mod xpt2046 {
             let yraw = (u16::from_be_bytes(ybytes) >> 3) as i32;
             CALIBRATION.calc_pos(xraw, yraw)
         }
+        pub fn read_pos(&mut self) -> Option<(i32, i32)> {
+            let mut x = [0; 2];
+            let mut y = [0; 2];
+            self.spi_device
+                .transaction(&mut [
+                    hal::spi::Operation::Write(&[0x90]),
+                    hal::spi::Operation::Read(&mut x),
+                    hal::spi::Operation::Write(&[0xd0]),
+                    hal::spi::Operation::Read(&mut y),
+                ])
+                .unwrap();
+
+            let x = (u16::from_be_bytes(x) >> 3) as i32;
+            let y = (u16::from_be_bytes(y) >> 3) as i32;
+
+            let cal = &CALIBRATION;
+
+            let x = ((x - cal.xraw_min) * cal.x_range / (cal.xraw_max - cal.xraw_min)).clamp(0, cal.x_range);
+            let y = ((y - cal.yraw_min) * cal.y_range / (cal.yraw_max - cal.yraw_min)).clamp(0, cal.y_range);
+            if x == 0 && y == 0 { None } else { Some((x, y)) }
+        }
+
     }
 }
