@@ -8,7 +8,6 @@ use embassy_embedded_hal as hal;
 use embassy_rp as rp;
 use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
-use mipidsi::options::{Orientation, Rotation};
 //use mipidsi::models::ST7789 as DisplayModel;
 use mipidsi::models::ILI9341Rgb565 as DisplayModel;
 use static_cell::StaticCell;
@@ -65,6 +64,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         xpt2046::Driver::new(spi_device)
     };
     let mut display = {
+        use mipidsi::options::{Orientation, Rotation, ColorOrder};
         let gpio_rst = rp::gpio::Output::new(p.PIN_6, rp::gpio::Level::Low);
         let gpio_dc = rp::gpio::Output::new(p.PIN_7, rp::gpio::Level::Low);
         let gpio_cs = rp::gpio::Output::new(p.PIN_8, rp::gpio::Level::High);
@@ -82,6 +82,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let display_interface = mipidsi::interface::SpiInterface::new(spi_device, gpio_dc, spi_buf);
         mipidsi::Builder::new(DisplayModel, display_interface)
             .display_size(240, 320)
+            .color_order(ColorOrder::Bgr)
             .reset_pin(gpio_rst)
             .orientation(Orientation::new().rotate(Rotation::Deg90).flip_horizontal())
             .init(&mut embassy_time::Delay)
@@ -102,7 +103,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         text_style
     ).draw(&mut display).unwrap();
     let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
-        .fill_color(eg::pixelcolor::Rgb565::BLUE)
+        .fill_color(eg::pixelcolor::Rgb565::WHITE)
         .build();
     let mutex_pos = MutexPos::new(RefCell::new(None));
     let fut_main = async {
@@ -110,21 +111,41 @@ async fn main(_spawner: embassy_executor::Spawner) {
             mutex_pos.lock(|pos| {
                 if let Some(pos) = *pos.borrow() {
                     eg::primitives::Rectangle::new(
-                        Point::new(pos.x - 1, pos.y - 1),
-                        Size::new(3, 3)
+                        Point::new(pos.x - 4, pos.y - 4),
+                        Size::new(8, 8)
                     ).into_styled(style_dot).draw(&mut display).unwrap();
                 }
             });
-            time::Timer::after_millis(100).await;
+            time::Timer::after_millis(30).await;
         }
     };
     let fut_touch = async {
+        let mut idx_write = 0;
+        let mut idx_read = 0;
+        let mut pos_buf: [Pos; 16] = [Pos { x: 0, y: 0 }; 16];
         loop {
             if let Some((x, y)) = touch.read_pos() {
+                pos_buf[idx_write] = Pos { x, y };
+                idx_write = (idx_write + 1) % pos_buf.len();
+                if idx_read == idx_write {
+                    idx_read = (idx_read + 1) % pos_buf.len();
+                }
+                let mut xsum = 0;
+                let mut ysum = 0;
+                let mut count = 0;
+                let mut idx = idx_read;
+                while idx != idx_write {
+                    xsum += pos_buf[idx].x;
+                    ysum += pos_buf[idx].y;
+                    count += 1;
+                    idx = (idx + 1) % pos_buf.len();
+                }
                 mutex_pos.lock(|pos| {
-                    *pos.borrow_mut() = Some(Pos { x, y });
+                    *pos.borrow_mut() = Some(Pos { x: xsum / count, y: ysum / count });
                 });
             } else {
+                idx_write = 0;
+                idx_read = 0;
                 mutex_pos.lock(|pos| {
                     *pos.borrow_mut() = None;
                 });
