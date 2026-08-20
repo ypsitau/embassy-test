@@ -1,5 +1,5 @@
-use embedded_hal_1 as hal;
 use embedded_hal_async as hal_async;
+use embedded_hal_1 as hal;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Pos {
