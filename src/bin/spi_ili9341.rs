@@ -52,7 +52,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
-        xpt2046::task(spi_device, &mutex_pos)
+        xpt2046::task(spi_device, &mutex_pos, embassy_time::Delay)
     };
     let mut display = {
         use mipidsi::options::{Orientation, Rotation, ColorOrder};
@@ -114,6 +114,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
 mod xpt2046 {
     use embedded_hal_1 as hal;
+    use embedded_hal_async as hal_async;
     use core::cell::RefCell;
     #[derive(Debug, Clone, Copy)]
     pub struct Pos {
@@ -125,7 +126,7 @@ mod xpt2046 {
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         RefCell<Option<Pos>>>;
 
-    pub async fn task(spi_device: impl hal::spi::SpiDevice, mutex_pos: &MutexPos) {
+    pub async fn task(spi_device: impl hal::spi::SpiDevice, mutex_pos: &MutexPos, mut delay: impl hal_async::delay::DelayNs) {
         let mut touch = Driver::new(spi_device);
         let mut idx_write = 0;
         let mut idx_read = 0;
@@ -157,7 +158,8 @@ mod xpt2046 {
                     *pos.borrow_mut() = None;
                 });
             }
-            embassy_time::Timer::after_millis(10).await;
+            delay.delay_ms(10).await;
+            //embassy_time::Timer::after_millis(10).await;
         }
     }
     struct SortedArray<const N: usize> {
