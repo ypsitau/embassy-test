@@ -23,16 +23,6 @@ use {defmt_rtt as _, panic_probe as _};
 //    embassy_sync::blocking_mutex::raw::NoopRawMutex,
 //    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
 
-#[derive(Debug, Clone, Copy)]
-struct Pos {
-    x: i32,
-    y: i32,
-}
-
-type MutexPos = embassy_sync::blocking_mutex::Mutex<
-    embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    RefCell<Option<Pos>>>;
-
 type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
     embassy_sync::blocking_mutex::raw::NoopRawMutex,
     RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
@@ -51,7 +41,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
         MutexSPI1::new(RefCell::new(spi))
     };
-    let mut touch = {
+    let mutex_pos = xpt2046::MutexPos::new(RefCell::new(None));
+    let fut_touch = {
         let spi_device = {
             let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
             let _pin_touch_irq  = p.PIN_15;
@@ -61,7 +52,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
-        xpt2046::Driver::new(spi_device)
+        xpt2046::task(spi_device, &mutex_pos)
     };
     let mut display = {
         use mipidsi::options::{Orientation, Rotation, ColorOrder};
@@ -105,7 +96,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
         .fill_color(eg::pixelcolor::Rgb565::WHITE)
         .build();
-    let mutex_pos = MutexPos::new(RefCell::new(None));
     let fut_main = async {
         loop {
             mutex_pos.lock(|pos| {
@@ -119,14 +109,24 @@ async fn main(_spawner: embassy_executor::Spawner) {
             time::Timer::after_millis(30).await;
         }
     };
-    //let fut_touch = async {
-    //    loop {
-    //        if let Some((x, y)) = touch.read_pos() {
-    //            defmt::info!("x = {:04}, y = {:04}", x, y);
-    //        }
-    //    }
-    //};
-    let fut_touch = async {
+    futures::join::join(fut_main, fut_touch).await;
+}
+
+mod xpt2046 {
+    use embedded_hal_1 as hal;
+    use core::cell::RefCell;
+    #[derive(Debug, Clone, Copy)]
+    pub struct Pos {
+        pub x: i32,
+        pub y: i32,
+    }
+
+    pub type MutexPos = embassy_sync::blocking_mutex::Mutex<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+        RefCell<Option<Pos>>>;
+
+    pub async fn task(spi_device: impl hal::spi::SpiDevice, mutex_pos: &MutexPos) {
+        let mut touch = Driver::new(spi_device);
         let mut idx_write = 0;
         let mut idx_read = 0;
         let mut pos_buf: [Pos; 8] = [Pos { x: 0, y: 0 }; 8];
@@ -157,14 +157,45 @@ async fn main(_spawner: embassy_executor::Spawner) {
                     *pos.borrow_mut() = None;
                 });
             }
-            time::Timer::after_millis(10).await;
+            embassy_time::Timer::after_millis(10).await;
         }
-    };
-    futures::join::join(fut_main, fut_touch).await;
-}
-
-mod xpt2046 {
-    use embedded_hal_1 as hal;
+    }
+    struct SortedArray<const N: usize> {
+        data: [i32; N],
+        len: usize,
+    }
+    impl<const N: usize> SortedArray<N> {
+        fn new() -> Self {
+            Self { data: [0; N], len: 0 }
+        }
+        fn push(&mut self, elem: i32){
+            let mut idx = 0;
+            while idx < self.len && self.data[idx] < elem {
+                idx += 1;
+            }
+            if idx < N {
+                for j in (idx + 1..self.len).rev() {
+                    self.data[j] = self.data[j - 1];
+                }
+                self.data[idx] = elem;
+                if self.len < N {
+                    self.len += 1;
+                }
+            }
+        }
+        fn median(&self) -> Option<i32> {
+            let idx_mid = self.len / 2;
+            if self.len >= 3 {
+                Some((self.data[idx_mid] + self.data[idx_mid - 1] + self.data[idx_mid + 1]) / 3)
+            } else if self.len == 2 {
+                Some((self.data[0] + self.data[1]) / 2)
+            } else if self.len == 1 {
+                Some(self.data[0])
+            } else {
+                None
+            }
+        }
+    }
     struct Calibration {
         xraw_max: i32,
         xraw_min: i32,
@@ -209,13 +240,13 @@ mod xpt2046 {
                 hal::spi::Operation::Write(&[Self::compose_cmd(0b011, 0b1, 0b1, 0b01)]), // z
                 hal::spi::Operation::Read(&mut zbytes),
             ]).unwrap();
-            //info!("xbytes: {:02x}, ybytes: {:02x}, zbytes: {:02x}", xbytes, ybytes, zbytes);
+            //defmt::info!("xbytes: {:02x}, ybytes: {:02x}, zbytes: {:02x}", xbytes, ybytes, zbytes);
             let xraw = (((xbytes[0] as i32) << 4) | (xbytes[1] as i32 >> 4)) as i32;
             let yraw = (((ybytes[0] as i32) << 4) | (ybytes[1] as i32 >> 4)) as i32;
             if zbytes[0] < 3 {
                 None
             } else {
-                //info!("xraw: {:04x}, yraw: {:04x}, zbytes: {:02x}", xraw, yraw, zbytes);
+                defmt::info!("xraw: {:04x}, yraw: {:04x}, zbytes: {:02x}", xraw, yraw, zbytes);
                 Some(CALIBRATION.calc_pos(xraw, yraw))
             }
         }
