@@ -17,6 +17,8 @@ pub async fn task(spi_device: impl hal::spi::SpiDevice, shared_pos: &impl Shared
     let mut idx_write = 0;
     let mut idx_read = 0;
     let mut pos_buf: [Pos; 8] = [Pos { x: 0, y: 0 }; 8];
+    let mut x_sorted = SortedArray::<8>::new();
+    let mut y_sorted = SortedArray::<8>::new();
     loop {
         if let Some((x, y)) = touch.read_pos() {
             pos_buf[idx_write] = Pos { x, y };
@@ -24,17 +26,17 @@ pub async fn task(spi_device: impl hal::spi::SpiDevice, shared_pos: &impl Shared
             if idx_read == idx_write {
                 idx_read = (idx_read + 1) % pos_buf.len();
             }
-            let mut xsum = 0;
-            let mut ysum = 0;
-            let mut count = 0;
+            x_sorted.clear();
+            y_sorted.clear();
             let mut idx = idx_read;
             while idx != idx_write {
-                xsum += pos_buf[idx].x;
-                ysum += pos_buf[idx].y;
-                count += 1;
+                x_sorted.push(pos_buf[idx].x);
+                y_sorted.push(pos_buf[idx].y);
                 idx = (idx + 1) % pos_buf.len();
             }
-            shared_pos.set_pos(Some(Pos { x: xsum / count, y: ysum / count }));
+            shared_pos.set_pos(Some(Pos {
+                x: x_sorted.median().unwrap_or(0),
+                y: y_sorted.median().unwrap_or(0) }));
         } else {
             idx_write = 0;
             idx_read = 0;
@@ -44,7 +46,6 @@ pub async fn task(spi_device: impl hal::spi::SpiDevice, shared_pos: &impl Shared
     }
 }
 
-/*
 struct SortedArray<const N: usize> {
     data: [i32; N],
     len: usize,
@@ -53,6 +54,9 @@ struct SortedArray<const N: usize> {
 impl<const N: usize> SortedArray<N> {
     fn new() -> Self {
         Self { data: [0; N], len: 0 }
+    }
+    fn clear(&mut self) {
+        self.len = 0;
     }
     fn push(&mut self, elem: i32){
         let mut idx = 0;
@@ -82,7 +86,6 @@ impl<const N: usize> SortedArray<N> {
         }
     }
 }
-*/
 
 struct Calibration {
     xraw_max: i32,
@@ -131,7 +134,7 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
             hal::spi::Operation::Read(&mut ybytes),
             hal::spi::Operation::Write(&[Self::compose_cmd(0b011, 0b1, 0b1, 0b01)]), // z
             hal::spi::Operation::Read(&mut zbytes),
-        ]).unwrap();
+        ]).ok()?;
         //defmt::info!("xbytes: {:02x}, ybytes: {:02x}, zbytes: {:02x}", xbytes, ybytes, zbytes);
         let xraw = (((xbytes[0] as i32) << 4) | (xbytes[1] as i32 >> 4)) as i32;
         let yraw = (((ybytes[0] as i32) << 4) | (ybytes[1] as i32 >> 4)) as i32;
