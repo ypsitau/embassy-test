@@ -72,7 +72,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
         MutexSPI1::new(RefCell::new(spi))
     };
-    let shared_pos = SharedPos::new();
     let mut touch = {
         let spi_device = {
             let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
@@ -127,6 +126,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
         .fill_color(eg::pixelcolor::Rgb565::WHITE)
         .build();
+    let shared_pos = SharedPos::new();
     let fut_main = async {
         loop {
             if let Some(pos) = shared_pos.get_pos() {
