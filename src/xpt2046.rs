@@ -12,40 +12,6 @@ pub trait SharedPos {
     fn set_pos(&self, pos: Option<Pos>);
 }
 
-pub async fn task(spi_device: impl hal::spi::SpiDevice, shared_pos: &impl SharedPos, mut delay: impl hal_async::delay::DelayNs) {
-    let mut touch = Driver::new(spi_device);
-    let mut idx_write = 0;
-    let mut idx_read = 0;
-    let mut pos_buf: [Pos; 8] = [Pos { x: 0, y: 0 }; 8];
-    let mut x_sorted = SortedArray::<8>::new();
-    let mut y_sorted = SortedArray::<8>::new();
-    loop {
-        if let Some((x, y)) = touch.read_pos() {
-            pos_buf[idx_write] = Pos { x, y };
-            idx_write = (idx_write + 1) % pos_buf.len();
-            if idx_read == idx_write {
-                idx_read = (idx_read + 1) % pos_buf.len();
-            }
-            x_sorted.clear();
-            y_sorted.clear();
-            let mut idx = idx_read;
-            while idx != idx_write {
-                x_sorted.push(pos_buf[idx].x);
-                y_sorted.push(pos_buf[idx].y);
-                idx = (idx + 1) % pos_buf.len();
-            }
-            shared_pos.set_pos(Some(Pos {
-                x: x_sorted.median().unwrap_or(0),
-                y: y_sorted.median().unwrap_or(0) }));
-        } else {
-            idx_write = 0;
-            idx_read = 0;
-            shared_pos.set_pos(None);
-        }
-        delay.delay_ms(10).await;
-    }
-}
-
 struct SortedArray<const N: usize> {
     data: [i32; N],
     len: usize,
@@ -123,26 +89,58 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
     pub fn new(spi_device: SpiDevice) -> Self {
         Self { spi_device }
     }
-    pub fn read_pos(&mut self) -> Option<(i32, i32)> {
+    pub async fn run(&mut self, shared_pos: &impl SharedPos, mut delay: impl hal_async::delay::DelayNs) {
+        let mut idx_write = 0;
+        let mut idx_read = 0;
+        let mut pos_buf: [Pos; 8] = [Pos { x: 0, y: 0 }; 8];
+        let mut x_sorted = SortedArray::<8>::new();
+        let mut y_sorted = SortedArray::<8>::new();
+        loop {
+            if let Some((x, y)) = self.read_pos_raw() {
+                pos_buf[idx_write] = Pos { x, y };
+                idx_write = (idx_write + 1) % pos_buf.len();
+                if idx_read == idx_write {
+                    idx_read = (idx_read + 1) % pos_buf.len();
+                }
+                x_sorted.clear();
+                y_sorted.clear();
+                let mut idx = idx_read;
+                while idx != idx_write {
+                    x_sorted.push(pos_buf[idx].x);
+                    y_sorted.push(pos_buf[idx].y);
+                    idx = (idx + 1) % pos_buf.len();
+                }
+                let (x, y) = CALIBRATION.calc_pos(
+                    x_sorted.median().unwrap_or(0), y_sorted.median().unwrap_or(0));
+                shared_pos.set_pos(Some(Pos { x, y }));
+            } else {
+                idx_write = 0;
+                idx_read = 0;
+                shared_pos.set_pos(None);
+            }
+            delay.delay_ms(10).await;
+        }
+    }
+    pub fn read_pos_raw(&mut self) -> Option<(i32, i32)> {
         let mut xbytes = [0u8; 2];
         let mut ybytes = [0u8; 2];
         let mut zbytes = [0u8; 1];
         self.spi_device.transaction(&mut [
-            hal::spi::Operation::Write(&[Self::compose_cmd(0b001, 0b0, 0b1, 0b01)]), // x
+            hal::spi::Operation::Write(&[Self::compose_cmd(0b001, 0b0, 0b1, 0b01)]), // Y
             hal::spi::Operation::Read(&mut xbytes),
-            hal::spi::Operation::Write(&[Self::compose_cmd(0b101, 0b0, 0b1, 0b01)]), // y
+            hal::spi::Operation::Write(&[Self::compose_cmd(0b101, 0b0, 0b1, 0b01)]), // X
             hal::spi::Operation::Read(&mut ybytes),
-            hal::spi::Operation::Write(&[Self::compose_cmd(0b011, 0b1, 0b1, 0b01)]), // z
+            hal::spi::Operation::Write(&[Self::compose_cmd(0b011, 0b1, 0b1, 0b01)]), // Z1
             hal::spi::Operation::Read(&mut zbytes),
         ]).ok()?;
         //defmt::info!("xbytes: {:02x}, ybytes: {:02x}, zbytes: {:02x}", xbytes, ybytes, zbytes);
-        let xraw = (((xbytes[0] as i32) << 4) | (xbytes[1] as i32 >> 4)) as i32;
-        let yraw = (((ybytes[0] as i32) << 4) | (ybytes[1] as i32 >> 4)) as i32;
+        let x = (((xbytes[0] as i32) << 4) | (xbytes[1] as i32 >> 4)) as i32;
+        let y = (((ybytes[0] as i32) << 4) | (ybytes[1] as i32 >> 4)) as i32;
         if zbytes[0] < 3 {
             None
         } else {
             //defmt::info!("xraw: {:04x}, yraw: {:04x}, zbytes: {:02x}", xraw, yraw, zbytes);
-            Some(CALIBRATION.calc_pos(xraw, yraw))
+            Some((x, y))
         }
     }
     const fn compose_cmd(adc: u8, mode: u8, reference: u8, power_down_mode: u8) -> u8 {

@@ -73,7 +73,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         MutexSPI1::new(RefCell::new(spi))
     };
     let shared_pos = SharedPos::new();
-    let fut_touch = {
+    let mut touch = {
         let spi_device = {
             let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
             let _pin_touch_irq  = p.PIN_15;
@@ -83,7 +83,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
-        xpt2046::task(spi_device, &shared_pos, embassy_time::Delay)
+        xpt2046::Driver::new(spi_device)
     };
     let mut display = {
         use mipidsi::options::{Orientation, Rotation, ColorOrder};
@@ -138,5 +138,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
             time::Timer::after_millis(30).await;
         }
     };
+    let fut_touch = touch.run(&shared_pos, embassy_time::Delay);
     futures::join::join(fut_main, fut_touch).await;
 }
