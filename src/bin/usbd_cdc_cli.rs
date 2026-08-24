@@ -4,7 +4,7 @@
 use core::sync::atomic;
 use defmt::info;
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::channel::{Channel, Receiver, Sender};
+use embassy_sync::channel;
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embassy_usb as usb;
@@ -12,8 +12,6 @@ use embedded_cli::{cli::CliBuilder, Command};
 use static_cell::StaticCell;
 use ufmt::uwriteln;
 use {defmt_rtt as _, panic_probe as _};
-
-static OUTPUT: Channel<ThreadModeRawMutex, u8, 256> = Channel::new();
 
 #[derive(Command)]
 enum CommandLine<'a> {
@@ -62,9 +60,11 @@ async fn main(_spawner: Spawner) {
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    let fut_output = output_task(cdc_acm_sender, OUTPUT.receiver());
+    
+    static CHANNEL_RELAY: channel::Channel<ThreadModeRawMutex, u8, 256> = channel::Channel::new();
+    let writer = WriterCDCACM::new(CHANNEL_RELAY.sender());
+    let fut_writer = WriterCDCACM::run(cdc_acm_sender, CHANNEL_RELAY.receiver());
     let fut_cli = async {
-        let writer = WriterCDCACM { output: OUTPUT.sender() };
         let (command_buffer, history_buffer) = {
             static COMMAND_BUFFER: StaticCell<[u8; 128]> = StaticCell::new();
             static HISTORY_BUFFER: StaticCell<[u8; 32]> = StaticCell::new();
@@ -111,21 +111,22 @@ async fn main(_spawner: Spawner) {
         };
         panic!("USB error: {:?}", e);
     };
-    embassy_futures::join::join3(fut_usb, fut_output, fut_cli).await;
+    embassy_futures::join::join3(fut_usb, fut_writer, fut_cli).await;
 }
 
-async fn output_task(
-    mut sender: usb::class::cdc_acm::Sender<'static, rp::usb::Driver<'static, rp::peripherals::USB>>,
-    receiver: Receiver<'static, ThreadModeRawMutex, u8, 256>,
+/*
+async fn relay_task(
+    mut sender_to_usb: usb::class::cdc_acm::Sender<'static, rp::usb::Driver<'static, rp::peripherals::USB>>,
+    receiver_from_channel: Receiver<'static, ThreadModeRawMutex, u8, 256>,
 ) -> ! {
     let mut packet = [0u8; 64];
     loop {
-        let first = receiver.receive().await;
+        let first = receiver_from_channel.receive().await;
         let mut length = 0;
         packet[length] = first;
         length += 1;
         while length < packet.len() {
-            match receiver.try_receive() {
+            match receiver_from_channel.try_receive() {
                 Ok(byte) => {
                     packet[length] = byte;
                     length += 1;
@@ -133,15 +134,43 @@ async fn output_task(
                 Err(_) => break,
             }
         }
-        let _ = sender.write_packet(&packet[..length]).await;
+        let _ = sender_to_usb.write_packet(&packet[..length]).await;
     }
 }
-
+*/
 //-----------------------------------------------------------------------------s
 // WriterCDCACM
 //-----------------------------------------------------------------------------s
-struct WriterCDCACM<'d> {
-    output: Sender<'d, ThreadModeRawMutex, u8, 256>,
+struct WriterCDCACM<'a> {
+    sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, 256>,
+}
+
+impl<'a> WriterCDCACM<'a> {
+    fn new(sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, 256>) -> Self {
+        Self { sender_to_channel }
+    }
+    async fn run(
+        mut sender_to_usb: usb::class::cdc_acm::Sender<'static, rp::usb::Driver<'static, rp::peripherals::USB>>,
+        reciver_from_channel: channel::Receiver<'a, ThreadModeRawMutex, u8, 256>,
+    ) -> ! {
+        let mut packet = [0u8; 64];
+        loop {
+            let first = reciver_from_channel.receive().await;
+            let mut length = 0;
+            packet[length] = first;
+            length += 1;
+            while length < packet.len() {
+                match reciver_from_channel.try_receive() {
+                    Ok(byte) => {
+                        packet[length] = byte;
+                        length += 1;
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = sender_to_usb.write_packet(&packet[..length]).await;
+        }
+    }
 }
 
 impl embedded_io::ErrorType for WriterCDCACM<'_> {
@@ -151,7 +180,7 @@ impl embedded_io::ErrorType for WriterCDCACM<'_> {
 impl embedded_io::Write for WriterCDCACM<'_> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         for &byte in buf {
-            self.output.try_send(byte).map_err(|_| WriterError)?;
+            self.sender_to_channel.try_send(byte).map_err(|_| WriterError)?;
         }
         Ok(buf.len())
     }
