@@ -42,6 +42,7 @@ portable-atomic = { version = "1.5", features = [
 ssd1306 = { version = "0.10.0", features = ["async"] }
 static_cell = { version = "2" }
 usbd-hid = { version = "0.10.1", features = ["defmt"] }
+embedded-cli = "0.2.1"
 
 [target.'cfg( target_arch = "arm" )'.dependencies]
 panic-probe = { version = "1", features = ["print-defmt"] }

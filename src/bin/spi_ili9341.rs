@@ -50,9 +50,7 @@ impl xpt2046::SharedPos for SharedPos {
         self.mutex_pos.lock(|p| *p.borrow())
     }
     fn set_pos(&self, pos: Option<xpt2046::Pos>) {
-        self.mutex_pos.lock(|p| {
-            *p.borrow_mut() = pos;
-        });
+        self.mutex_pos.lock(|p| { *p.borrow_mut() = pos; });
     }
 }
 
