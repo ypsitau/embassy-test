@@ -65,10 +65,12 @@ async fn main(_spawner: Spawner) {
     let fut_output = output_task(cdc_acm_sender, OUTPUT.receiver());
     let fut_cli = async {
         let writer = WriterCDCACM { output: OUTPUT.sender() };
+        static COMMAND_BUFFER: StaticCell<[u8; 128]> = StaticCell::new();
+        static HISTORY_BUFFER: StaticCell<[u8; 32]> = StaticCell::new();
         let mut cli = match CliBuilder::default()
             .writer(writer)
-            .command_buffer([0; 128])
-            .history_buffer([0; 32])
+            .command_buffer(*COMMAND_BUFFER.init([0; 128]))
+            .history_buffer(*HISTORY_BUFFER.init([0; 32]))
             .build()
         {
             Ok(cli) => cli,
@@ -103,7 +105,7 @@ async fn main(_spawner: Spawner) {
         };
         panic!("USB error: {:?}", e);
     };
-    embassy_futures::join::join(fut_usb, embassy_futures::join::join(fut_output, fut_cli)).await;
+    embassy_futures::join::join3(fut_usb, fut_output, fut_cli).await;
 }
 
 async fn output_task(
