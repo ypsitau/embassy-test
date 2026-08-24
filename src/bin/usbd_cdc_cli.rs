@@ -79,12 +79,15 @@ async fn main(_spawner: Spawner) {
             Ok(cli) => cli,
             Err(_) => return,
         };
-        let mut packet_buf = [0u8; 64];
+        let packet_buf = {
+            static PACKET_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+            PACKET_BUF.init([0u8; 64])
+        };
         let e = loop {
             cdc_acm_receiver.wait_connection().await;
             info!("Connected");
             let e = loop {
-                let buf_read = match cdc_acm_receiver.read_packet(&mut packet_buf).await {
+                let buf_read = match cdc_acm_receiver.read_packet(packet_buf).await {
                     Ok(n) => &packet_buf[..n], Err(e) => break e,
                 };
                 for &byte in buf_read {
