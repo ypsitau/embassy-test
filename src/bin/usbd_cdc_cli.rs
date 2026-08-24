@@ -65,12 +65,15 @@ async fn main(_spawner: Spawner) {
     let fut_output = output_task(cdc_acm_sender, OUTPUT.receiver());
     let fut_cli = async {
         let writer = WriterCDCACM { output: OUTPUT.sender() };
-        static COMMAND_BUFFER: StaticCell<[u8; 128]> = StaticCell::new();
-        static HISTORY_BUFFER: StaticCell<[u8; 32]> = StaticCell::new();
+        let (command_buffer, history_buffer) = {
+            static COMMAND_BUFFER: StaticCell<[u8; 128]> = StaticCell::new();
+            static HISTORY_BUFFER: StaticCell<[u8; 32]> = StaticCell::new();
+            (*COMMAND_BUFFER.init([0; 128]), *HISTORY_BUFFER.init([0; 32]))
+        };
         let mut cli = match CliBuilder::default()
             .writer(writer)
-            .command_buffer(*COMMAND_BUFFER.init([0; 128]))
-            .history_buffer(*HISTORY_BUFFER.init([0; 32]))
+            .command_buffer(command_buffer)
+            .history_buffer(history_buffer)
             .build()
         {
             Ok(cli) => cli,
