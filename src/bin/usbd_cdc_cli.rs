@@ -60,10 +60,13 @@ async fn main(_spawner: Spawner) {
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    
-    static CHANNEL_RELAY: channel::Channel<ThreadModeRawMutex, u8, 256> = channel::Channel::new();
-    let writer = WriterCDCACM::new(CHANNEL_RELAY.sender());
-    let fut_writer = WriterCDCACM::run(cdc_acm_sender, CHANNEL_RELAY.receiver());
+    let (writer, fut_writer) = {
+        static CHANNEL: channel::Channel<ThreadModeRawMutex, u8, 256> = channel::Channel::new();
+        (
+            WriterCDCACM::new(CHANNEL.sender()),
+            WriterCDCACM::run_channel_task(cdc_acm_sender, CHANNEL.receiver()),
+        )
+    };
     let fut_cli = async {
         let (command_buffer, history_buffer) = {
             static COMMAND_BUFFER: StaticCell<[u8; 128]> = StaticCell::new();
@@ -114,30 +117,6 @@ async fn main(_spawner: Spawner) {
     embassy_futures::join::join3(fut_usb, fut_writer, fut_cli).await;
 }
 
-/*
-async fn relay_task(
-    mut sender_to_usb: usb::class::cdc_acm::Sender<'static, rp::usb::Driver<'static, rp::peripherals::USB>>,
-    receiver_from_channel: Receiver<'static, ThreadModeRawMutex, u8, 256>,
-) -> ! {
-    let mut packet = [0u8; 64];
-    loop {
-        let first = receiver_from_channel.receive().await;
-        let mut length = 0;
-        packet[length] = first;
-        length += 1;
-        while length < packet.len() {
-            match receiver_from_channel.try_receive() {
-                Ok(byte) => {
-                    packet[length] = byte;
-                    length += 1;
-                }
-                Err(_) => break,
-            }
-        }
-        let _ = sender_to_usb.write_packet(&packet[..length]).await;
-    }
-}
-*/
 //-----------------------------------------------------------------------------s
 // WriterCDCACM
 //-----------------------------------------------------------------------------s
@@ -149,7 +128,7 @@ impl<'a> WriterCDCACM<'a> {
     fn new(sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, 256>) -> Self {
         Self { sender_to_channel }
     }
-    async fn run(
+    async fn run_channel_task(
         mut sender_to_usb: usb::class::cdc_acm::Sender<'static, rp::usb::Driver<'static, rp::peripherals::USB>>,
         reciver_from_channel: channel::Receiver<'a, ThreadModeRawMutex, u8, 256>,
     ) -> ! {
