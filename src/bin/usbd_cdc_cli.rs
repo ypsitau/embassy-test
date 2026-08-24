@@ -8,17 +8,21 @@ use embassy_sync::channel;
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embassy_usb as usb;
-use embedded_cli::{cli::CliBuilder, Command};
+use embedded_cli as cli;
+use embedded_cli::cli::CliBuilder;
 use static_cell::StaticCell;
 use ufmt::uwriteln;
 use {defmt_rtt as _, panic_probe as _};
 
-#[derive(Command)]
+#[derive(cli::Command)]
 enum CommandLine<'a> {
     /// Show a greeting.
     Hello { name: Option<&'a str> },
     /// Show the firmware status.
     Status,
+    /// Show GPIO Status.
+    GpioStatus,
+    
 }
 
 rp::bind_interrupts!(struct Irqs {
@@ -103,6 +107,9 @@ async fn main(_spawner: Spawner) {
                                 }
                                 CommandLine::Status => {
                                     uwriteln!(cli.writer(), "status: ok")?;
+                                }
+                                CommandLine::GpioStatus => {
+                                    uwriteln!(cli.writer(), "GPIO status: ok")?;
                                 }
                             }
                             Ok(())
