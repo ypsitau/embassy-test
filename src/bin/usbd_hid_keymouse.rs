@@ -20,8 +20,10 @@ async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
     let usb_driver = rp::usb::Driver::new(p.USB, Irqs);
     let mut usb_builder = {
+        const VID: u16 = 0xc0de;
+        const PID: u16 = 0xcafe;
         const CONTROL_BUF_SIZE: usize = 64;
-        let mut config = usb::Config::new(0xc0de, 0xcafe);
+        let mut config = usb::Config::new(VID, PID);
         config.manufacturer = Some("Embassy");
         config.product = Some("HID keyboard-Mouse example");
         config.serial_number = Some("12345678");

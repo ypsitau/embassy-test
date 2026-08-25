@@ -34,24 +34,30 @@ async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
     let usb_driver = rp::usb::Driver::new(p.USB, Irqs);
     let mut usb_builder = {
+        const CONTROL_BUF_SIZE: usize = 64;
         let mut config = usb::Config::new(0xc0de, 0xcafe);
         config.manufacturer = Some("Embassy");
         config.product = Some("USB-serial example");
         config.serial_number = Some("12345678");
         config.max_power = 100;
-        config.max_packet_size_0 = 64;
-        static CONFIG_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-        static BOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-        static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-        static CONTROL_BUF_BUF: StaticCell<[u8; 64]> = StaticCell::new();
-        let mut usb_builder = usb::Builder::new(
-            usb_driver,
-            config,
-            CONFIG_DESCRIPTOR_BUF.init([0; 256]),
-            BOS_DESCRIPTOR_BUF.init([0; 256]),
-            MSOS_DESCRIPTOR_BUF.init([0; 256]),
-            CONTROL_BUF_BUF.init([0; 64]),
-        );
+        config.max_packet_size_0 = CONTROL_BUF_SIZE as u8;
+        let (config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf) = {
+            const CONFIG_DESCRIPTOR_SIZE: usize = 256;
+            const BOS_DESCRIPTOR_SIZE: usize = 256;
+            const MSOS_DESCRIPTOR_SIZE: usize = 256;
+            static CONFIG_DESCRIPTOR_BUF: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
+            static BOS_DESCRIPTOR_BUF: StaticCell<[u8; BOS_DESCRIPTOR_SIZE]> = StaticCell::new();
+            static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; MSOS_DESCRIPTOR_SIZE]> = StaticCell::new();
+            static CONTROL_BUF: StaticCell<[u8; CONTROL_BUF_SIZE]> = StaticCell::new();
+            (
+                CONFIG_DESCRIPTOR_BUF.init([0; CONFIG_DESCRIPTOR_SIZE]),
+                BOS_DESCRIPTOR_BUF.init([0; BOS_DESCRIPTOR_SIZE]),
+                MSOS_DESCRIPTOR_BUF.init([0; MSOS_DESCRIPTOR_SIZE]),
+                CONTROL_BUF.init([0; CONTROL_BUF_SIZE]),
+            )
+        };
+        let mut usb_builder = usb::Builder::new(usb_driver, config,
+            config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf);
         static DEVICE_HANDLER: StaticCell<DeviceHandler> = StaticCell::new();
         usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
         usb_builder
