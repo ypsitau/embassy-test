@@ -11,6 +11,10 @@ use heapless::String;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+//type CdcDriver<'d> = usb::class::cdc_acm::CdcAcmClass<'d, rp::usb::Driver<'d, rp::peripherals::USB>>;
+type CdcSender<'d> = usb::class::cdc_acm::Sender<'d, rp::usb::Driver<'d, rp::peripherals::USB>>;
+type CdcReceiver<'d> = usb::class::cdc_acm::Receiver<'d, rp::usb::Driver<'d, rp::peripherals::USB>>;
+
 rp::bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => rp::usb::InterruptHandler<rp::peripherals::USB>;
 });
@@ -42,44 +46,52 @@ async fn main(_spawner: Spawner) {
         usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
         usb_builder
     };
-    let cdc_acm_driver_1 = {
-        static STATE: StaticCell<usb::class::cdc_acm::State> = StaticCell::new();
-        let state = STATE.init(usb::class::cdc_acm::State::new());
+    let cdc_driver_1 = {
+        let state = {
+            static STATE: StaticCell<usb::class::cdc_acm::State> = StaticCell::new();
+            STATE.init(usb::class::cdc_acm::State::new())
+        };
         let max_packet_size = 64;
         usb::class::cdc_acm::CdcAcmClass::new(&mut usb_builder, state, max_packet_size)
     };
-    let cdc_acm_driver_2 = {
-        static STATE: StaticCell<usb::class::cdc_acm::State> = StaticCell::new();
-        let state = STATE.init(usb::class::cdc_acm::State::new());
+    let cdc_driver_2 = {
+        let state = {
+            static STATE: StaticCell<usb::class::cdc_acm::State> = StaticCell::new();
+            STATE.init(usb::class::cdc_acm::State::new())
+        };
         let max_packet_size = 64;
         usb::class::cdc_acm::CdcAcmClass::new(&mut usb_builder, state, max_packet_size)
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    let fut_echo_1 = run_session(cdc_acm_driver_1, "USB CDC ACM 1");
-    let fut_echo_2 = run_session(cdc_acm_driver_2, "USB CDC ACM 2");
+    let fut_echo_1 = {
+        let (cdc_sender, cdc_receiver) = cdc_driver_1.split();
+        run_session(cdc_sender, cdc_receiver, "USB CDC ACM 1")
+    };
+    let fut_echo_2 = {
+        let (cdc_sender, cdc_receiver) = cdc_driver_2.split();
+        run_session(cdc_sender, cdc_receiver, "USB CDC ACM 2")
+    };
     embassy_futures::join::join3(fut_usb, fut_echo_1, fut_echo_2).await;
 }
 
-type CdcAcmDriver<'d> = usb::class::cdc_acm::CdcAcmClass<'d, rp::usb::Driver<'d, rp::peripherals::USB>>;
-
-async fn run_session(mut cdc_acm_driver: CdcAcmDriver<'_>, name: &str) -> Result<(), usb::driver::EndpointError> {
+async fn run_session(mut cdc_sender: CdcSender<'_>, mut cdc_receiver: CdcReceiver<'_>, name: &str) -> Result<(), usb::driver::EndpointError> {
     let mut text_opening = String::<64>::new();
     write!(text_opening, "\r\nEcho via {}\r\n", name).unwrap();
     let mut first = true;
     let mut buf = [0u8; 64];
     let e = loop {
-        cdc_acm_driver.wait_connection().await;
+        cdc_receiver.wait_connection().await;
         info!("Connected");
         let e = loop {
-            let buf_read = match cdc_acm_driver.read_packet(&mut buf).await {
+            let buf_read = match cdc_receiver.read_packet(&mut buf).await {
                 Ok(n) => &buf[..n], Err(e) => break e,
             };
             if first {
-                if let Err(e) = cdc_acm_driver.write_packet(text_opening.as_bytes()).await { break e; }
+                if let Err(e) = cdc_sender.write_packet(text_opening.as_bytes()).await { break e; }
                 first = false;
             }
-            if let Err(e) = cdc_acm_driver.write_packet(buf_read).await { break e; }
+            if let Err(e) = cdc_sender.write_packet(buf_read).await { break e; }
         };
         if e != usb::driver::EndpointError::Disabled { break e; }
     };
