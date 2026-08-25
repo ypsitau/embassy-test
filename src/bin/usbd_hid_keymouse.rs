@@ -22,6 +22,9 @@ async fn main(_spawner: Spawner) {
     let mut usb_builder = {
         const VID: u16 = 0xc0de;
         const PID: u16 = 0xcafe;
+        const CONFIG_DESCRIPTOR_SIZE: usize = 256;
+        const BOS_DESCRIPTOR_SIZE: usize = 256;
+        const MSOS_DESCRIPTOR_SIZE: usize = 256;
         const CONTROL_BUF_SIZE: usize = 64;
         let mut config = usb::Config::new(VID, PID);
         config.manufacturer = Some("Embassy");
@@ -34,9 +37,6 @@ async fn main(_spawner: Spawner) {
         config.device_sub_class = 0;
         config.device_protocol = 0;
         let (config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf) = {
-            const CONFIG_DESCRIPTOR_SIZE: usize = 256;
-            const BOS_DESCRIPTOR_SIZE: usize = 256;
-            const MSOS_DESCRIPTOR_SIZE: usize = 256;
             static CONFIG_DESCRIPTOR_BUF: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
             static BOS_DESCRIPTOR_BUF: StaticCell<[u8; BOS_DESCRIPTOR_SIZE]> = StaticCell::new();
             static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; MSOS_DESCRIPTOR_SIZE]> = StaticCell::new();
@@ -58,7 +58,10 @@ async fn main(_spawner: Spawner) {
         usb_builder
     };
     let (hid_keyboard_reader, mut hid_keyboard_writer) = {
-        static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
+        let state = {
+            static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
+            STATE.init(usb::class::hid::State::new())
+        };
         let config = usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::KeyboardReport::desc(),
             request_handler: None,
@@ -67,14 +70,13 @@ async fn main(_spawner: Spawner) {
             hid_subclass: usb::class::hid::HidSubclass::Boot,
             hid_boot_protocol: usb::class::hid::HidBootProtocol::Keyboard,
         };
-        usb::class::hid::HidReaderWriter::<_, 1, 8>::new(
-            &mut usb_builder,
-            STATE.init(usb::class::hid::State::new()),
-            config,
-        ).split()
+        usb::class::hid::HidReaderWriter::<_, 1, 8>::new(&mut usb_builder, state, config).split()
     };
     let (hid_mouse_reader, mut hid_mouse_writer) = {
-        static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
+        let state = {
+            static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
+            STATE.init(usb::class::hid::State::new())
+        };
         let config = usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::MouseReport::desc(),
             request_handler: None,
@@ -83,11 +85,7 @@ async fn main(_spawner: Spawner) {
             hid_subclass: usb::class::hid::HidSubclass::Boot,
             hid_boot_protocol: usb::class::hid::HidBootProtocol::Mouse,
         };
-        usb::class::hid::HidReaderWriter::<_, 1, 8>::new(
-            &mut usb_builder,
-            STATE.init(usb::class::hid::State::new()),
-            config,
-        ).split()
+        usb::class::hid::HidReaderWriter::<_, 1, 8>::new(&mut usb_builder, state, config).split()
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
