@@ -11,7 +11,7 @@ use embassy_usb as usb;
 use embedded_cli as cli;
 use embedded_cli::cli::CliBuilder;
 use static_cell::StaticCell;
-use ufmt::uwriteln;
+//use ufmt::uwriteln;
 use {defmt_rtt as _, panic_probe as _};
 
 #[derive(cli::Command)]
@@ -56,7 +56,7 @@ async fn main(_spawner: Spawner) {
         usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
         usb_builder
     };
-    let (cdc_acm_sender, mut cdc_acm_receiver) = {
+    let (cdc_sender, mut cdc_receiver) = {
         static STATE: StaticCell<usb::class::cdc_acm::State> = StaticCell::new();
         let state = STATE.init(usb::class::cdc_acm::State::new());
         let max_packet_size = 64;
@@ -64,12 +64,9 @@ async fn main(_spawner: Spawner) {
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    let (writer, fut_writer) = {
+    let (writer_cdc, fut_writer_cdc) = {
         static CHANNEL: channel::Channel<ThreadModeRawMutex, u8, 256> = channel::Channel::new();
-        (
-            WriterCDCACM::new(CHANNEL.sender()),
-            WriterCDCACM::run_channel_task(cdc_acm_sender, CHANNEL.receiver()),
-        )
+        (WriterCDC::new(CHANNEL.sender()), WriterCDC::run_channel_task(cdc_sender, CHANNEL.receiver()))
     };
     let fut_cli = async {
         let (command_buffer, history_buffer) = {
@@ -77,24 +74,20 @@ async fn main(_spawner: Spawner) {
             static HISTORY_BUFFER: StaticCell<[u8; 32]> = StaticCell::new();
             (*COMMAND_BUFFER.init([0; 128]), *HISTORY_BUFFER.init([0; 32]))
         };
-        let mut cli = match CliBuilder::default()
-            .writer(writer)
+        let mut cli = CliBuilder::default()
+            .writer(writer_cdc)
             .command_buffer(command_buffer)
             .history_buffer(history_buffer)
-            .build()
-        {
-            Ok(cli) => cli,
-            Err(_) => return,
-        };
+            .build().expect("Failed to build CLI");
         let packet_buf = {
             static PACKET_BUF: StaticCell<[u8; 64]> = StaticCell::new();
             PACKET_BUF.init([0u8; 64])
         };
         let e = loop {
-            cdc_acm_receiver.wait_connection().await;
+            cdc_receiver.wait_connection().await;
             info!("Connected");
             let e = loop {
-                let buf_read = match cdc_acm_receiver.read_packet(packet_buf).await {
+                let buf_read = match cdc_receiver.read_packet(packet_buf).await {
                     Ok(n) => &packet_buf[..n], Err(e) => break e,
                 };
                 for &byte in buf_read {
@@ -103,13 +96,13 @@ async fn main(_spawner: Spawner) {
                         &mut CommandLine::processor(|cli, command| {
                             match command {
                                 CommandLine::Hello { name } => {
-                                    uwriteln!(cli.writer(), "Hello, {}!", name.unwrap_or("world"))?;
+                                    ufmt::uwriteln!(cli.writer(), "Hello, {}!", name.unwrap_or("world"))?;
                                 }
                                 CommandLine::Status => {
-                                    uwriteln!(cli.writer(), "status: ok")?;
+                                    ufmt::uwriteln!(cli.writer(), "status: ok")?;
                                 }
                                 CommandLine::GpioStatus => {
-                                    uwriteln!(cli.writer(), "GPIO status: ok")?;
+                                    ufmt::uwriteln!(cli.writer(), "GPIO status: ok")?;
                                 }
                             }
                             Ok(())
@@ -121,17 +114,17 @@ async fn main(_spawner: Spawner) {
         };
         panic!("USB error: {:?}", e);
     };
-    embassy_futures::join::join3(fut_usb, fut_writer, fut_cli).await;
+    embassy_futures::join::join3(fut_usb, fut_writer_cdc, fut_cli).await;
 }
 
 //-----------------------------------------------------------------------------s
-// WriterCDCACM
+// WriterCDC
 //-----------------------------------------------------------------------------s
-struct WriterCDCACM<'a> {
+struct WriterCDC<'a> {
     sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, 256>,
 }
 
-impl<'a> WriterCDCACM<'a> {
+impl<'a> WriterCDC<'a> {
     fn new(sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, 256>) -> Self {
         Self { sender_to_channel }
     }
@@ -159,11 +152,11 @@ impl<'a> WriterCDCACM<'a> {
     }
 }
 
-impl embedded_io::ErrorType for WriterCDCACM<'_> {
+impl embedded_io::ErrorType for WriterCDC<'_> {
     type Error = WriterError;
 }
 
-impl embedded_io::Write for WriterCDCACM<'_> {
+impl embedded_io::Write for WriterCDC<'_> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         for &byte in buf {
             self.sender_to_channel.try_send(byte).map_err(|_| WriterError)?;

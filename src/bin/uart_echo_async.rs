@@ -24,16 +24,17 @@ async fn main(_spawner: Spawner) {
     run_session(uart_driver).await.unwrap();
 }
 
-async fn run_session(mut uart_driver: rp::uart::Uart<'_, rp::uart::Async>) -> Result<(), rp::uart::Error> {
+async fn run_session(uart_driver: rp::uart::Uart<'_, rp::uart::Async>) -> Result<(), rp::uart::Error> {
+    let (mut uart_tx, mut uart_rx) = uart_driver.split();
     let mut first = true;
     let mut buf = [0u8; 1];
     loop {
-        uart_driver.read(&mut buf).await?;
+        uart_rx.read(&mut buf).await?;
         if first {
-            uart_driver.write(b"\r\nEcho via Async UART\r\n").await?;
+            uart_tx.write(b"\r\nEcho via Async UART\r\n").await?;
             first = false;
         }
-        uart_driver.write(&buf).await?;
+        uart_tx.write(&buf).await?;
     }
     #[allow(unreachable_code)]
     Ok(()) 

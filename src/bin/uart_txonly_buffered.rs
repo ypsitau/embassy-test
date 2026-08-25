@@ -19,8 +19,11 @@ async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
     let uart_driver = {
         let tx = p.PIN_0;
-        static TX_BUFFER: static_cell::StaticCell<[u8; 64]> = static_cell::StaticCell::new();
-        let tx_buffer = TX_BUFFER.init([0u8; 64]);
+        let tx_buffer = {
+            const TX_BUFFER_SIZE: usize = 64;
+            static TX_BUFFER: static_cell::StaticCell<[u8; TX_BUFFER_SIZE]> = static_cell::StaticCell::new();
+            TX_BUFFER.init([0u8; TX_BUFFER_SIZE])
+        };
         let config = rp::uart::Config::default();
         rp::uart::BufferedUartTx::new(p.UART0, Irqs, tx, tx_buffer, config)
     };
@@ -28,6 +31,7 @@ async fn main(_spawner: Spawner) {
 }
 
 async fn run_session(mut uart_driver: rp::uart::BufferedUartTx) -> Result<(), rp::uart::Error> {
+    Timer::after_millis(1000).await;
     let mut text = String::<64>::new();
     let mut i = 0;
     loop {

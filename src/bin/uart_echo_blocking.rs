@@ -17,16 +17,17 @@ async fn main(_spawner: Spawner) {
     run_session(uart_driver).unwrap();
 }
 
-fn run_session(mut uart_driver: rp::uart::Uart<'_, rp::uart::Blocking>) -> Result<(), rp::uart::Error> {
+fn run_session(uart_driver: rp::uart::Uart<'_, rp::uart::Blocking>) -> Result<(), rp::uart::Error> {
+    let (mut uart_tx, mut uart_rx) = uart_driver.split();
     let mut first = true;
     let mut buf = [0u8; 1];
     loop {
-        uart_driver.blocking_read(&mut buf)?;
+        uart_rx.blocking_read(&mut buf)?;
         if first {
-            uart_driver.blocking_write(b"\r\nEcho via Blocking UART\r\n")?;
+            uart_tx.blocking_write(b"\r\nEcho via Blocking UART\r\n")?;
             first = false;
         }
-        uart_driver.blocking_write(&buf)?;
+        uart_tx.blocking_write(&buf)?;
     }
     #[allow(unreachable_code)]
     Ok(()) 
