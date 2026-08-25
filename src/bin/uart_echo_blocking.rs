@@ -14,11 +14,11 @@ async fn main(_spawner: Spawner) {
         let config = rp::uart::Config::default();
         rp::uart::Uart::new_blocking(p.UART0, tx, rx, config)
     };
-    run_session(uart_driver).unwrap();
+    let (uart_tx, uart_rx) = uart_driver.split();
+    run_session(uart_tx, uart_rx).unwrap();
 }
 
-fn run_session(uart_driver: rp::uart::Uart<'_, rp::uart::Blocking>) -> Result<(), rp::uart::Error> {
-    let (mut uart_tx, mut uart_rx) = uart_driver.split();
+fn run_session(mut uart_tx: rp::uart::UartTx<'_, rp::uart::Blocking>, mut uart_rx: rp::uart::UartRx<'_, rp::uart::Blocking>) -> Result<(), rp::uart::Error> {
     let mut first = true;
     let mut buf = [0u8; 1];
     loop {

@@ -21,11 +21,11 @@ async fn main(_spawner: Spawner) {
         let config = rp::uart::Config::default();
         rp::uart::Uart::new(p.UART0, tx, rx, Irqs, tx_dma, rx_dma, config)
     };
-    run_session(uart_driver).await.unwrap();
+    let (uart_tx, uart_rx) = uart_driver.split();
+    run_session(uart_tx, uart_rx).await.unwrap();
 }
 
-async fn run_session(uart_driver: rp::uart::Uart<'_, rp::uart::Async>) -> Result<(), rp::uart::Error> {
-    let (mut uart_tx, mut uart_rx) = uart_driver.split();
+async fn run_session(mut uart_tx: rp::uart::UartTx<'_, rp::uart::Async>, mut uart_rx: rp::uart::UartRx<'_, rp::uart::Async>) -> Result<(), rp::uart::Error> {
     let mut first = true;
     let mut buf = [0u8; 1];
     loop {
