@@ -40,7 +40,7 @@ portable-atomic = { version = "1.5", features = [
     "critical-section",
 ] } # required for static_cell
 ssd1306 = { version = "0.10.0", features = ["async"] }
-static_cell = { version = "2" }
+static_cell = "2"
 usbd-hid = { version = "0.10.1", features = ["defmt"] }
 embedded-cli = "0.2.1"
 embedded-io = "0.6.1"

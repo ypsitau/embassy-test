@@ -4,6 +4,7 @@
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embedded_io_async::{Write, Read};
+use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 rp::bind_interrupts!(struct Irqs {
@@ -16,12 +17,15 @@ async fn main(_spawner: Spawner) {
     let uart_driver = {
         let tx = p.PIN_0;
         let rx = p.PIN_1;
-        let (tx_buffer, rx_buffer) = {
+        let tx_buffer = { // should be replaced by make_static macro when it becomes available
             const TX_BUFFER_SIZE: usize = 64;
+            static STATIC_CELL: StaticCell<[u8; TX_BUFFER_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0u8; TX_BUFFER_SIZE])
+        };
+        let rx_buffer = { // should be replaced by make_static macro when it becomes available
             const RX_BUFFER_SIZE: usize = 64;
-            static TX_BUFFER: static_cell::StaticCell<[u8; TX_BUFFER_SIZE]> = static_cell::StaticCell::new();
-            static RX_BUFFER: static_cell::StaticCell<[u8; RX_BUFFER_SIZE]> = static_cell::StaticCell::new();
-            (TX_BUFFER.init([0u8; TX_BUFFER_SIZE]), RX_BUFFER.init([0u8; RX_BUFFER_SIZE]))
+            static STATIC_CELL: StaticCell<[u8; RX_BUFFER_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0u8; RX_BUFFER_SIZE])
         };
         let config = rp::uart::Config::default();
         rp::uart::BufferedUart::new(p.UART0, tx, rx, Irqs, tx_buffer, rx_buffer, config)

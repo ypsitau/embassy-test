@@ -36,23 +36,23 @@ async fn main(_spawner: Spawner) {
         config.serial_number = Some("12345678");
         config.max_power = 100;
         config.max_packet_size_0 = CONTROL_BUF_SIZE as u8;
-        let config_descriptor_buf = {
+        let config_descriptor_buf = { // should be replaced by make_static macro when it becomes available
             static STATIC_CELL: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
             STATIC_CELL.init([0; CONFIG_DESCRIPTOR_SIZE])
         };
-        let bos_descriptor_buf = {
+        let bos_descriptor_buf = { // should be replaced by make_static macro when it becomes available
             static STATIC_CELL: StaticCell<[u8; BOS_DESCRIPTOR_SIZE]> = StaticCell::new();
             STATIC_CELL.init([0; BOS_DESCRIPTOR_SIZE])
         };
-        let msos_descriptor_buf = {
+        let msos_descriptor_buf = { // should be replaced by make_static macro when it becomes available
             static STATIC_CELL: StaticCell<[u8; MSOS_DESCRIPTOR_SIZE]> = StaticCell::new();
             STATIC_CELL.init([0; MSOS_DESCRIPTOR_SIZE])
         };
-        let control_buf = {
+        let control_buf = { // should be replaced by make_static macro when it becomes available
             static STATIC_CELL: StaticCell<[u8; CONTROL_BUF_SIZE]> = StaticCell::new();
             STATIC_CELL.init([0; CONTROL_BUF_SIZE])
         };
-        let device_handler = {
+        let device_handler = { // should be replaced by make_static macro when it becomes available
             static STATIC_CELL: StaticCell<DeviceHandler> = StaticCell::new();
             STATIC_CELL.init(DeviceHandler::new())
         };

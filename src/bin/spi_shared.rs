@@ -30,6 +30,7 @@ async fn main(spawner: Spawner) {
         let tx_dma = p.DMA_CH0;
         let rx_dma = p.DMA_CH1;
         let config = rp::spi::Config::default();
+        // should be replaced by make_static macro when it becomes available
         static STATIC_CELL: StaticCell<MutexSPI1> = StaticCell::new();
         STATIC_CELL.init(MutexSPI1::new(rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config)))
     };

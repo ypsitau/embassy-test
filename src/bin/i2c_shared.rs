@@ -24,8 +24,9 @@ async fn main(spawner: Spawner) {
         let scl = p.PIN_15;
         let sda = p.PIN_14;
         let config = rp::i2c::Config::default();
-        static MUTEX_I2C1: StaticCell<MutexI2C1> = StaticCell::new();
-        MUTEX_I2C1.init(MutexI2C1::new(rp::i2c::I2c::new_async(p.I2C1, scl, sda, Irqs, config)))
+        // should be replaced by make_static macro when it becomes available
+        static STATIC_CELL: StaticCell<MutexI2C1> = StaticCell::new();
+        STATIC_CELL.init(MutexI2C1::new(rp::i2c::I2c::new_async(p.I2C1, scl, sda, Irqs, config)))
     };
     spawner.spawn(task_a(mutex_i2c1).unwrap());
     spawner.spawn(task_b(mutex_i2c1).unwrap());

@@ -43,8 +43,9 @@ async fn main(_spawner: Spawner) {
         let scl = p.PIN_17;
         let mut config = rp::i2c::Config::default();
         config.frequency = 400_000;
-        static MUTEX_I2C0: StaticCell<MutexI2C0> = StaticCell::new();
-        MUTEX_I2C0.init(MutexI2C0::new(rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)))
+        // should be replaced by make_static macro when it becomes available
+        static STATIC_CELL: StaticCell<MutexI2C0> = StaticCell::new();
+        STATIC_CELL.init(MutexI2C0::new(rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)))
     };
     let mut display = {
         let interface = ssd1306::I2CDisplayInterface::new(I2cDevice::new(mutex_i2c0));

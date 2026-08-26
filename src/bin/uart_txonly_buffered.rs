@@ -8,6 +8,7 @@ use embassy_rp as rp;
 use embedded_io_async::Write as _;
 use embassy_time::Timer;
 use heapless::String;
+use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 rp::bind_interrupts!(struct Irqs {
@@ -19,10 +20,10 @@ async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
     let uart_driver = {
         let tx = p.PIN_0;
-        let tx_buffer = {
+        let tx_buffer = { // should be replaced by make_static macro when it becomes available
             const TX_BUFFER_SIZE: usize = 64;
-            static TX_BUFFER: static_cell::StaticCell<[u8; TX_BUFFER_SIZE]> = static_cell::StaticCell::new();
-            TX_BUFFER.init([0u8; TX_BUFFER_SIZE])
+            static STATIC_CELL: StaticCell<[u8; TX_BUFFER_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0u8; TX_BUFFER_SIZE])
         };
         let config = rp::uart::Config::default();
         rp::uart::BufferedUartTx::new(p.UART0, Irqs, tx, tx_buffer, config)
