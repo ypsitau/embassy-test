@@ -52,10 +52,13 @@ async fn main(_spawner: Spawner) {
             static STATIC_CELL: StaticCell<[u8; CONTROL_BUF_SIZE]> = StaticCell::new();
             STATIC_CELL.init([0; CONTROL_BUF_SIZE])
         };
+        let device_handler = {
+            static STATIC_CELL: StaticCell<DeviceHandler> = StaticCell::new();
+            STATIC_CELL.init(DeviceHandler::new())
+        };
         let mut usb_builder = usb::Builder::new(usb_driver, config,
             config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf);
-        static DEVICE_HANDLER: StaticCell<DeviceHandler> = StaticCell::new();
-        usb_builder.handler(DEVICE_HANDLER.init(DeviceHandler::new()));
+        usb_builder.handler(device_handler);
         usb_builder
     };
     let cdc_driver_1 = {

@@ -36,21 +36,25 @@ async fn main(_spawner: Spawner) {
         config.device_class = 0;
         config.device_sub_class = 0;
         config.device_protocol = 0;
-        let (config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf) = {
-            static CONFIG_DESCRIPTOR_BUF: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
-            static BOS_DESCRIPTOR_BUF: StaticCell<[u8; BOS_DESCRIPTOR_SIZE]> = StaticCell::new();
-            static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; MSOS_DESCRIPTOR_SIZE]> = StaticCell::new();
-            static CONTROL_BUF: StaticCell<[u8; CONTROL_BUF_SIZE]> = StaticCell::new();
-            (
-                CONFIG_DESCRIPTOR_BUF.init([0; CONFIG_DESCRIPTOR_SIZE]),
-                BOS_DESCRIPTOR_BUF.init([0; BOS_DESCRIPTOR_SIZE]),
-                MSOS_DESCRIPTOR_BUF.init([0; MSOS_DESCRIPTOR_SIZE]),
-                CONTROL_BUF.init([0; CONTROL_BUF_SIZE]),
-            )
+        let config_descriptor_buf = {
+            static STATIC_CELL: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; CONFIG_DESCRIPTOR_SIZE])
+        };
+        let bos_descriptor_buf = {
+            static STATIC_CELL: StaticCell<[u8; BOS_DESCRIPTOR_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; BOS_DESCRIPTOR_SIZE])
+        };
+        let msos_descriptor_buf = {
+            static STATIC_CELL: StaticCell<[u8; MSOS_DESCRIPTOR_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; MSOS_DESCRIPTOR_SIZE])
+        };
+        let control_buf = {
+            static STATIC_CELL: StaticCell<[u8; CONTROL_BUF_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; CONTROL_BUF_SIZE])
         };
         let device_handler = {
-            static DEVICE_HANDLER: StaticCell<DeviceHandler> = StaticCell::new();
-            DEVICE_HANDLER.init(DeviceHandler::new())
+            static STATIC_CELL: StaticCell<DeviceHandler> = StaticCell::new();
+            STATIC_CELL.init(DeviceHandler::new())
         };
         let mut usb_builder = usb::Builder::new(usb_driver, config,
             config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf);
