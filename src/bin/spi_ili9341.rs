@@ -87,8 +87,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let gpio_rst = rp::gpio::Output::new(p.PIN_6, rp::gpio::Level::Low);
         let gpio_dc = rp::gpio::Output::new(p.PIN_7, rp::gpio::Level::Low);
         let gpio_cs = rp::gpio::Output::new(p.PIN_8, rp::gpio::Level::High);
-        static GPIO_BL: StaticCell<rp::gpio::Output<'static>> = StaticCell::new();
-        let _gpio_bl = GPIO_BL.init(rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High));
+        let _gpio_bl = {
+            static STATIC_CELL: StaticCell<rp::gpio::Output<'static>> = StaticCell::new();
+            STATIC_CELL.init(rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High));
+        };
         let spi_device = {
             let mut config = rp::spi::Config::default();
             config.frequency = 64_000_000;
@@ -96,8 +98,11 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
-        static SPI_BUF: StaticCell<[u8; 320]> = StaticCell::new();
-        let spi_buf = SPI_BUF.init([0u8; 320]);
+        let spi_buf = {
+            const SPI_BUF_SIZE: usize = 320;
+            static STATIC_CELL: StaticCell<[u8; SPI_BUF_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0u8; SPI_BUF_SIZE])
+        };
         let display_interface = mipidsi::interface::SpiInterface::new(spi_device, gpio_dc, spi_buf);
         mipidsi::Builder::new(DisplayModel, display_interface)
             .display_size(240, 320)
