@@ -46,17 +46,21 @@ async fn main(_spawner: Spawner) {
         config.serial_number = Some("12345678");
         config.max_power = 100;
         config.max_packet_size_0 = CONTROL_BUF_SIZE as u8;
-        let (config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf) = {
-            static CONFIG_DESCRIPTOR_BUF: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
-            static BOS_DESCRIPTOR_BUF: StaticCell<[u8; BOS_DESCRIPTOR_SIZE]> = StaticCell::new();
-            static MSOS_DESCRIPTOR_BUF: StaticCell<[u8; MSOS_DESCRIPTOR_SIZE]> = StaticCell::new();
-            static CONTROL_BUF: StaticCell<[u8; CONTROL_BUF_SIZE]> = StaticCell::new();
-            (
-                CONFIG_DESCRIPTOR_BUF.init([0; CONFIG_DESCRIPTOR_SIZE]),
-                BOS_DESCRIPTOR_BUF.init([0; BOS_DESCRIPTOR_SIZE]),
-                MSOS_DESCRIPTOR_BUF.init([0; MSOS_DESCRIPTOR_SIZE]),
-                CONTROL_BUF.init([0; CONTROL_BUF_SIZE]),
-            )
+        let config_descriptor_buf = {
+            static STATIC_CELL: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; CONFIG_DESCRIPTOR_SIZE])
+        };
+        let bos_descriptor_buf = {
+            static STATIC_CELL: StaticCell<[u8; BOS_DESCRIPTOR_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; BOS_DESCRIPTOR_SIZE])
+        };
+        let msos_descriptor_buf = {
+            static STATIC_CELL: StaticCell<[u8; MSOS_DESCRIPTOR_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; MSOS_DESCRIPTOR_SIZE])
+        };
+        let control_buf = {
+            static STATIC_CELL: StaticCell<[u8; CONTROL_BUF_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; CONTROL_BUF_SIZE])
         };
         let mut usb_builder = usb::Builder::new(usb_driver, config,
             config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf);
