@@ -63,8 +63,8 @@ async fn main(_spawner: Spawner) {
     };
     let (hid_keyboard_reader, mut hid_keyboard_writer) = {
         let state = {
-            static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
-            STATE.init(usb::class::hid::State::new())
+            static STATIC_CELL: StaticCell<usb::class::hid::State> = StaticCell::new();
+            STATIC_CELL.init(usb::class::hid::State::new())
         };
         let config = usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::KeyboardReport::desc(),
@@ -78,8 +78,8 @@ async fn main(_spawner: Spawner) {
     };
     let (hid_mouse_reader, mut hid_mouse_writer) = {
         let state = {
-            static STATE: StaticCell<usb::class::hid::State> = StaticCell::new();
-            STATE.init(usb::class::hid::State::new())
+            static STATIC_CELL: StaticCell<usb::class::hid::State> = StaticCell::new();
+            STATIC_CELL.init(usb::class::hid::State::new())
         };
         let config = usb::class::hid::Config {
             report_descriptor: usbd_hid::descriptor::MouseReport::desc(),
