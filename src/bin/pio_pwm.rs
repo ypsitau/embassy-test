@@ -17,8 +17,9 @@ async fn main(_spawner: Spawner) -> !{
     let p = embassy_rp::init(Default::default());
     let mut pio0 = rp::pio::Pio::new(p.PIO0, Irqs);
     let mut pwm = {
+        let pin = p.PIN_25;
         let program = rp::pio_programs::pwm::PioPwmProgram::new(&mut pio0.common);
-        rp::pio_programs::pwm::PioPwm::new(&mut pio0.common, pio0.sm0, p.PIN_25, &program)
+        rp::pio_programs::pwm::PioPwm::new(&mut pio0.common, pio0.sm0, pin, &program)
     };
     pwm.set_period(Duration::from_micros(20_000));
     pwm.start();
