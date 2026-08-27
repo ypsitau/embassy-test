@@ -1,6 +1,3 @@
-//! This example shows powerful PIO module in the RP2040 chip to communicate with WS2812 LED modules.
-//! See (https://www.sparkfun.com/categories/tags/ws2812)
-
 #![no_std]
 #![no_main]
 
@@ -16,31 +13,17 @@ rp::bind_interrupts!(struct Irqs {
     DMA_IRQ_0 => rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>;
 });
 
-/// Input a value 0 to 255 to get a color value
-/// The colours are a transition r - g - b - back to r.
-fn wheel(pos: usize) -> RGB8 {
-    let pos: u8 = pos as u8;
-    if pos < 85 {
-        RGB8::new(255 - pos * 3, 0, pos * 3)
-    } else if pos < 170 {
-        let pos = pos - 85;
-        RGB8::new(0, pos * 3, 255 - pos * 3)
-    } else {
-        let pos = pos - 170;
-        RGB8::new(pos * 3, 255 - pos * 3, 0)
-    }
-}
-
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    const NUM_LEDS: usize = 8;
+    const NUM_LEDS: usize = 1;
     info!("Start");
     let p = embassy_rp::init(Default::default());
     let mut pio0 = rp::pio::Pio::new(p.PIO0, Irqs);
     let mut rgb8_array = [RGB8::default(); NUM_LEDS];
     let mut ws2812 = {
+        let pin = p.PIN_16;
         let program = rp::pio_programs::ws2812::PioWs2812Program::new(&mut pio0.common);
-        rp::pio_programs::ws2812::PioWs2812::new(&mut pio0.common, pio0.sm0, p.DMA_CH0, Irqs, p.PIN_16, &program)
+        rp::pio_programs::ws2812::PioWs2812::new(&mut pio0.common, pio0.sm0, p.DMA_CH0, Irqs, pin, &program)
     };
     let mut ticker = Ticker::every(Duration::from_millis(10));
     loop {
@@ -54,5 +37,18 @@ async fn main(_spawner: Spawner) {
             //ws2812.write_slice(&data).await;
             ticker.next().await;
         }
+    }
+}
+
+fn wheel(pos: usize) -> RGB8 {
+    let pos: u8 = pos as u8;
+    if pos < 85 {
+        RGB8::new(255 - pos * 3, 0, pos * 3)
+    } else if pos < 170 {
+        let pos = pos - 85;
+        RGB8::new(0, pos * 3, 255 - pos * 3)
+    } else {
+        let pos = pos - 170;
+        RGB8::new(pos * 3, 255 - pos * 3, 0)
     }
 }
