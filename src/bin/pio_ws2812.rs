@@ -48,7 +48,7 @@ async fn main(_spawner: Spawner) {
             debug!("New Colors:");
             for i in 0..NUM_LEDS {
                 rgb8_array[i] = wheel(((i * 256) / NUM_LEDS + j) & 255);
-                debug!("R: {} G: {} B: {}", rgb8_array[i].r, rgb8_array[i].g, rgb8_array[i].b);
+                debug!("R: {:02x} G: {:02x} B: {:02x}", rgb8_array[i].r, rgb8_array[i].g, rgb8_array[i].b);
             }
             ws2812.write(&rgb8_array).await;
             //ws2812.write_slice(&data).await;
