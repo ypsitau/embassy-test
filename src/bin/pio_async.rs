@@ -14,6 +14,7 @@ rp::bind_interrupts!(struct Irqs {
 });
 
 fn setup_pio_task_sm0<'d>(pio: &mut rp::pio::Common<'d, rp::peripherals::PIO0>, sm: &mut rp::pio::StateMachine<'d, rp::peripherals::PIO0, 0>, pin: rp::Peri<'d, impl rp::pio::PioPin>) {
+//fn setup_pio_task_sm0<'d>(pio: &mut rp::pio::Common<'d, impl rp::pio::Instance>, sm: &mut rp::pio::StateMachine<'d, impl rp::pio::Instance, 0>, pin: rp::Peri<'d, impl rp::pio::PioPin>) {
     // Setup sm0
 
     // Send data serially to pin
