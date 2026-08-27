@@ -8,13 +8,12 @@ use embassy_sync::channel;
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embassy_usb as usb;
-use embedded_cli as cli;
 use embedded_cli::cli::CliBuilder;
 use static_cell::StaticCell;
 //use ufmt::uwriteln;
 use {defmt_rtt as _, panic_probe as _};
 
-#[derive(cli::Command)]
+#[derive(embedded_cli::Command)]
 enum CommandLine<'a> {
     /// Show a greeting.
     Hello { name: Option<&'a str> },
@@ -79,24 +78,31 @@ async fn main(_spawner: Spawner) {
     };
     let mut usb_device = usb_builder.build();
     let fut_usb = usb_device.run();
-    let (writer_cdc, fut_writer_cdc) = {
-        static CHANNEL: channel::Channel<ThreadModeRawMutex, u8, 256> = channel::Channel::new();
-        (WriterCDC::new(CHANNEL.sender()), WriterCDC::run_channel_task(cdc_sender, CHANNEL.receiver()))
+    let (writer_async_bridge, fut_writer_async_bridge) = {
+        const N: usize = 256;
+        static CHANNEL: channel::Channel<ThreadModeRawMutex, u8, N> = channel::Channel::new();
+        (WriterAsyncBridge::<N>::new(CHANNEL.sender()), WriterAsyncBridge::<N>::run_task(cdc_sender, CHANNEL.receiver()))
     };
     let fut_cli = async {
-        let (command_buffer, history_buffer) = {
-            static COMMAND_BUFFER: StaticCell<[u8; 128]> = StaticCell::new();
-            static HISTORY_BUFFER: StaticCell<[u8; 32]> = StaticCell::new();
-            (*COMMAND_BUFFER.init([0; 128]), *HISTORY_BUFFER.init([0; 32]))
+        let command_buffer = { // should be replaced by make_static macro when it becomes available
+            const COMMAND_BUFFER_SIZE: usize = 128;
+            static STATIC_CELL: StaticCell<[u8; COMMAND_BUFFER_SIZE]> = StaticCell::new();
+            *STATIC_CELL.init([0; COMMAND_BUFFER_SIZE])
+        };
+        let history_buffer = { // should be replaced by make_static macro when it becomes available
+            const HISTORY_BUFFER_SIZE: usize = 512;
+            static STATIC_CELL: StaticCell<[u8; HISTORY_BUFFER_SIZE]> = StaticCell::new();
+            *STATIC_CELL.init([0; HISTORY_BUFFER_SIZE])
         };
         let mut cli = CliBuilder::default()
-            .writer(writer_cdc)
+            .writer(writer_async_bridge)
             .command_buffer(command_buffer)
             .history_buffer(history_buffer)
             .build().expect("Failed to build CLI");
-        let packet_buf = {
-            static PACKET_BUF: StaticCell<[u8; 64]> = StaticCell::new();
-            PACKET_BUF.init([0u8; 64])
+        let packet_buf = { // should be replaced by make_static macro when it becomes available
+            const PACKET_BUF_SIZE: usize = 64;
+            static STATIC_CELL: StaticCell<[u8; PACKET_BUF_SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0u8; PACKET_BUF_SIZE])
         };
         let e = loop {
             cdc_receiver.wait_connection().await;
@@ -129,23 +135,23 @@ async fn main(_spawner: Spawner) {
         };
         panic!("USB error: {:?}", e);
     };
-    embassy_futures::join::join3(fut_usb, fut_writer_cdc, fut_cli).await;
+    embassy_futures::join::join3(fut_usb, fut_writer_async_bridge, fut_cli).await;
 }
 
 //-----------------------------------------------------------------------------s
-// WriterCDC
+// WriterAsyncBridge
 //-----------------------------------------------------------------------------s
-struct WriterCDC<'a> {
-    sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, 256>,
+struct WriterAsyncBridge<'a, const N: usize> {
+    sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, N>,
 }
 
-impl<'a> WriterCDC<'a> {
-    fn new(sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, 256>) -> Self {
+impl<'a, const N: usize> WriterAsyncBridge<'a, N> {
+    fn new(sender_to_channel: channel::Sender<'a, ThreadModeRawMutex, u8, N>) -> Self {
         Self { sender_to_channel }
     }
-    async fn run_channel_task(
-        mut sender_to_usb: usb::class::cdc_acm::Sender<'static, rp::usb::Driver<'static, rp::peripherals::USB>>,
-        reciver_from_channel: channel::Receiver<'a, ThreadModeRawMutex, u8, 256>,
+    async fn run_task(
+        mut sender_to_async: impl embedded_io_async::Write,
+        reciver_from_channel: channel::Receiver<'a, ThreadModeRawMutex, u8, N>,
     ) -> ! {
         let mut packet = [0u8; 64];
         loop {
@@ -162,16 +168,16 @@ impl<'a> WriterCDC<'a> {
                     Err(_) => break,
                 }
             }
-            let _ = sender_to_usb.write_packet(&packet[..length]).await;
+            let _ = sender_to_async.write(&packet[..length]).await;
         }
     }
 }
 
-impl embedded_io::ErrorType for WriterCDC<'_> {
+impl<'a, const N: usize> embedded_io::ErrorType for WriterAsyncBridge<'a, N> {
     type Error = WriterError;
 }
 
-impl embedded_io::Write for WriterCDC<'_> {
+impl<'a, const N: usize> embedded_io::Write for WriterAsyncBridge<'a, N> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         for &byte in buf {
             self.sender_to_channel.try_send(byte).map_err(|_| WriterError)?;

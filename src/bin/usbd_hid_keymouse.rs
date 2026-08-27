@@ -28,7 +28,7 @@ async fn main(_spawner: Spawner) {
         const CONTROL_BUF_SIZE: usize = 64;
         let mut config = usb::Config::new(VID, PID);
         config.manufacturer = Some("Embassy");
-        config.product = Some("HID keyboard-Mouse example");
+        config.product = Some("usbd_hid_keymouse");
         config.serial_number = Some("12345678");
         config.max_power = 100;
         config.max_packet_size_0 = CONTROL_BUF_SIZE as u8;
