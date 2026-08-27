@@ -1,0 +1,39 @@
+//! This example shows how to use the PIO module in the RP2040 to implement a stepper motor driver
+//! for a 5-wire stepper such as the 28BYJ-48. You can halt an ongoing rotation by dropping the future.
+#![no_std]
+#![no_main]
+
+use defmt::info;
+use embassy_executor::Spawner;
+use embassy_rp as rp;
+use embassy_time::{Duration, Timer, with_timeout};
+use {defmt_rtt as _, panic_probe as _};
+
+rp::bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => rp::pio::InterruptHandler<rp::peripherals::PIO0>;
+});
+
+#[embassy_executor::main]
+async fn main(_spawner: Spawner) {
+    let p = embassy_rp::init(Default::default());
+    let mut pio0 = rp::pio::Pio::new(p.PIO0, Irqs);
+    let mut stepper = {
+        let pins = (p.PIN_4, p.PIN_5, p.PIN_6, p.PIN_7);
+        let program = rp::pio_programs::stepper::PioStepperProgram::new(&mut pio0.common);
+        rp::pio_programs::stepper::PioStepper::new(&mut pio0.common, pio0.sm0, pio0.irq0, pins.0, pins.1, pins.2, pins.3, &program)
+    };
+    stepper.set_frequency(120);
+    loop {
+        info!("CW full steps");
+        stepper.step(1000).await;
+        info!("CCW full steps, drop after 1 sec");
+        if with_timeout(Duration::from_secs(1), stepper.step(-i32::MAX)).await.is_err() {
+            info!("Time's up!");
+            Timer::after(Duration::from_secs(1)).await;
+        }
+        info!("CW half steps");
+        stepper.step_half(1000).await;
+        info!("CCW half steps");
+        stepper.step_half(-1000).await;
+    }
+}
