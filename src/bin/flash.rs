@@ -69,12 +69,12 @@ fn run_multiwrite_bytes(flash: &mut Flash, offset: u32) {
     if buf.iter().any(|pbuf| *pbuf != 0xff) {
         defmt::panic!("unexpected");
     }
-    flash.blocking_write(ADDR_OFFSET + offset, &[0x01]).unwrap();
+    flash.blocking_write(ADDR_OFFSET + offset + 0, &[0x01]).unwrap();
     flash.blocking_write(ADDR_OFFSET + offset + 1, &[0x02]).unwrap();
     flash.blocking_write(ADDR_OFFSET + offset + 2, &[0x03]).unwrap();
     flash.blocking_write(ADDR_OFFSET + offset + 3, &[0x04]).unwrap();
     flash.blocking_read(ADDR_OFFSET + offset, &mut buf).unwrap();
-    info!("The first 4 bytes after write: {=[u8]:#x}", buf[0..4]);
+    info!("The first 4 bytes after write: {=[u8]:#02x}", buf[0..4]);
     if &buf[0..4] != &[0x01, 0x02, 0x03, 0x04] {
         defmt::panic!("unexpected");
     }
