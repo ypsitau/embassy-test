@@ -1,8 +1,7 @@
-//! This example shows powerful PIO module in the RP2040 chip.
-
 #![no_std]
 #![no_main]
 use defmt::info;
+use embassy_futures as futures;
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use fixed::traits::ToFixed as _;
@@ -10,36 +9,36 @@ use fixed_macro::types::U56F8;
 use {defmt_rtt as _, panic_probe as _};
 
 rp::bind_interrupts!(struct Irqs {
-    PIO0_IRQ_0 => rp::pio::InterruptHandler<rp::peripherals::PIO0>;
+    PIO1_IRQ_0 => rp::pio::InterruptHandler<rp::peripherals::PIO1>;
 });
 
-fn setup_pio_task_sm0<'d>(pio: &mut rp::pio::Common<'d, rp::peripherals::PIO0>, sm: &mut rp::pio::StateMachine<'d, rp::peripherals::PIO0, 0>, pin: rp::Peri<'d, impl rp::pio::PioPin>) {
-//fn setup_pio_task_sm0<'d>(pio: &mut rp::pio::Common<'d, impl rp::pio::Instance>, sm: &mut rp::pio::StateMachine<'d, impl rp::pio::Instance, 0>, pin: rp::Peri<'d, impl rp::pio::PioPin>) {
-    // Setup sm0
-
+fn setup_pio_task0<'d, PIO: rp::pio::Instance, const SM: usize> (
+    pio: &mut rp::pio::Common<'d, PIO>,
+    sm: &mut rp::pio::StateMachine<'d, PIO, SM>,
+    pin: rp::Peri<'d, impl rp::pio::PioPin>
+) {
     // Send data serially to pin
-    let prg = rp::pio::program::pio_asm!(
+    let program = rp::pio::program::pio_asm!(
         ".origin 16",
         "set pindirs, 1",
         ".wrap_target",
         "out pins,1 [19]",
         ".wrap",
     );
-
-    let mut cfg = rp::pio::Config::default();
-    cfg.use_program(&pio.load_program(&prg.program), &[]);
+    let mut config = rp::pio::Config::default();
+    config.use_program(&pio.load_program(&program.program), &[]);
     let out_pin = pio.make_pio_pin(pin);
-    cfg.set_out_pins(&[&out_pin]);
-    cfg.set_set_pins(&[&out_pin]);
-    cfg.clock_divider = (U56F8!(125_000_000) / 20 / 200).to_fixed();
-    cfg.shift_out.auto_fill = true;
-    sm.set_config(&cfg);
+    config.set_out_pins(&[&out_pin]);
+    config.set_set_pins(&[&out_pin]);
+    config.clock_divider = (U56F8!(125_000_000) / 20 / 200).to_fixed();
+    config.shift_out.auto_fill = true;
+    sm.set_config(&config);
 }
 
-#[embassy_executor::task]
-async fn pio_task_sm0(mut sm: rp::pio::StateMachine<'static, rp::peripherals::PIO0, 0>) {
+async fn pio_task0<PIO: rp::pio::Instance, const SM: usize>(
+    mut sm: rp::pio::StateMachine<'static, PIO, SM>
+) {
     sm.set_enable(true);
-
     let mut v = 0x0f0caffa;
     loop {
         sm.tx().wait_push(v).await;
@@ -48,11 +47,12 @@ async fn pio_task_sm0(mut sm: rp::pio::StateMachine<'static, rp::peripherals::PI
     }
 }
 
-fn setup_pio_task_sm1<'d>(pio: &mut rp::pio::Common<'d, rp::peripherals::PIO0>, sm: &mut rp::pio::StateMachine<'d, rp::peripherals::PIO0, 1>) {
-    // Setupm sm1
-
+fn setup_pio_task1<'d, PIO: rp::pio::Instance, const SM: usize>(
+    pio: &mut rp::pio::Common<'d, PIO>,
+    sm: &mut rp::pio::StateMachine<'d, PIO, SM>,
+) {
     // Read 0b10101 repeatedly until ISR is full
-    let prg = rp::pio::program::pio_asm!(
+    let program = rp::pio::program::pio_asm!(
         //
         ".origin 8",
         "set x, 0x15",
@@ -60,17 +60,17 @@ fn setup_pio_task_sm1<'d>(pio: &mut rp::pio::Common<'d, rp::peripherals::PIO0>, 
         "in x, 5 [31]",
         ".wrap",
     );
-
-    let mut cfg = rp::pio::Config::default();
-    cfg.use_program(&pio.load_program(&prg.program), &[]);
-    cfg.clock_divider = (U56F8!(125_000_000) / 2000).to_fixed();
-    cfg.shift_in.auto_fill = true;
-    cfg.shift_in.direction = rp::pio::ShiftDirection::Right;
-    sm.set_config(&cfg);
+    let mut config = rp::pio::Config::default();
+    config.use_program(&pio.load_program(&program.program), &[]);
+    config.clock_divider = (U56F8!(125_000_000) / 2000).to_fixed();
+    config.shift_in.auto_fill = true;
+    config.shift_in.direction = rp::pio::ShiftDirection::Right;
+    sm.set_config(&config);
 }
 
-#[embassy_executor::task]
-async fn pio_task_sm1(mut sm: rp::pio::StateMachine<'static, rp::peripherals::PIO0, 1>) {
+async fn pio_task1<PIO: rp::pio::Instance, const SM: usize>(
+    mut sm: rp::pio::StateMachine<'static, PIO, SM>
+) {
     sm.set_enable(true);
     loop {
         let rx = sm.rx().wait_pull().await;
@@ -78,11 +78,12 @@ async fn pio_task_sm1(mut sm: rp::pio::StateMachine<'static, rp::peripherals::PI
     }
 }
 
-fn setup_pio_task_sm2<'d>(pio: &mut rp::pio::Common<'d, rp::peripherals::PIO0>, sm: &mut rp::pio::StateMachine<'d, rp::peripherals::PIO0, 2>) {
-    // Setup sm2
-
-    // Repeatedly trigger IRQ 3
-    let prg = rp::pio::program::pio_asm!(
+fn setup_pio_task2<'d, PIO: rp::pio::Instance, const SM: usize>(
+    pio: &mut rp::pio::Common<'d, PIO>,
+    sm: &mut rp::pio::StateMachine<'d, PIO, SM>,
+) {
+    // Repeatedly trigger IRQ
+    let program = rp::pio::program::pio_asm!(
         ".origin 0",
         ".wrap_target",
         "set x,10",
@@ -91,14 +92,16 @@ fn setup_pio_task_sm2<'d>(pio: &mut rp::pio::Common<'d, rp::peripherals::PIO0>, 
         "irq 3 [15]",
         ".wrap",
     );
-    let mut cfg = rp::pio::Config::default();
-    cfg.use_program(&pio.load_program(&prg.program), &[]);
-    cfg.clock_divider = (U56F8!(125_000_000) / 2000).to_fixed();
-    sm.set_config(&cfg);
+    let mut config = rp::pio::Config::default();
+    config.use_program(&pio.load_program(&program.program), &[]);
+    config.clock_divider = (U56F8!(125_000_000) / 2000).to_fixed();
+    sm.set_config(&config);
 }
 
-#[embassy_executor::task]
-async fn pio_task_sm2(mut irq: rp::pio::Irq<'static, rp::peripherals::PIO0, 3>, mut sm: rp::pio::StateMachine<'static, rp::peripherals::PIO0, 2>) {
+async fn pio_task2<PIO: rp::pio::Instance, const SM: usize, const IRQ: usize>(
+    mut irq: rp::pio::Irq<'static, PIO, IRQ>,
+    mut sm: rp::pio::StateMachine<'static, PIO, SM>
+) {
     sm.set_enable(true);
     loop {
         irq.wait().await;
@@ -107,13 +110,15 @@ async fn pio_task_sm2(mut irq: rp::pio::Irq<'static, rp::peripherals::PIO0, 3>, 
 }
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {
+async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let mut pio0 = rp::pio::Pio::new(p.PIO0, Irqs);
-    setup_pio_task_sm0(&mut pio0.common, &mut pio0.sm0, p.PIN_0);
-    setup_pio_task_sm1(&mut pio0.common, &mut pio0.sm1);
-    setup_pio_task_sm2(&mut pio0.common, &mut pio0.sm2);
-    spawner.spawn(pio_task_sm0(pio0.sm0).unwrap());
-    spawner.spawn(pio_task_sm1(pio0.sm1).unwrap());
-    spawner.spawn(pio_task_sm2(pio0.irq3, pio0.sm2).unwrap());
+    let mut pio = rp::pio::Pio::new(p.PIO1, Irqs);
+    setup_pio_task0(&mut pio.common, &mut pio.sm3, p.PIN_0);
+    setup_pio_task1(&mut pio.common, &mut pio.sm1);
+    setup_pio_task2(&mut pio.common, &mut pio.sm2);
+    futures::join::join3(
+        pio_task0(pio.sm3),
+        pio_task1(pio.sm1),
+        pio_task2(pio.irq3, pio.sm2)
+    ).await;
 }
