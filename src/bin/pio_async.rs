@@ -9,7 +9,7 @@ use fixed_macro::types::U56F8;
 use {defmt_rtt as _, panic_probe as _};
 
 rp::bind_interrupts!(struct Irqs {
-    PIO1_IRQ_0 => rp::pio::InterruptHandler<rp::peripherals::PIO1>;
+    PIO0_IRQ_0 => rp::pio::InterruptHandler<rp::peripherals::PIO0>;
 });
 
 fn setup_pio_task0<'d, PIO: rp::pio::Instance, const SM: usize> (
@@ -19,18 +19,20 @@ fn setup_pio_task0<'d, PIO: rp::pio::Instance, const SM: usize> (
 ) {
     // Send data serially to pin
     let program = rp::pio::program::pio_asm!(
-        ".origin 16",
-        "set pindirs, 1",
-        ".wrap_target",
-        "out pins,1 [19]",
-        ".wrap",
+        r#"
+        .origin 16
+            set pindirs, 1
+        .wrap_target
+            out pins,1 [19]
+        .wrap
+        "#
     );
     let mut config = rp::pio::Config::default();
     config.use_program(&pio.load_program(&program.program), &[]);
     let out_pin = pio.make_pio_pin(pin);
     config.set_out_pins(&[&out_pin]);
     config.set_set_pins(&[&out_pin]);
-    config.clock_divider = (U56F8!(125_000_000) / 20 / 200).to_fixed();
+    config.clock_divider = (rp::clocks::clk_sys_freq().to_fixed::<fixed::types::U56F8>() / 20 / 200).to_fixed();
     config.shift_out.auto_fill = true;
     sm.set_config(&config);
 }
@@ -53,16 +55,17 @@ fn setup_pio_task1<'d, PIO: rp::pio::Instance, const SM: usize>(
 ) {
     // Read 0b10101 repeatedly until ISR is full
     let program = rp::pio::program::pio_asm!(
-        //
-        ".origin 8",
-        "set x, 0x15",
-        ".wrap_target",
-        "in x, 5 [31]",
-        ".wrap",
+        r#"
+        .origin 8
+            set x, 0x15
+        .wrap_target
+            in x, 5 [31]
+        .wrap
+        "#
     );
     let mut config = rp::pio::Config::default();
     config.use_program(&pio.load_program(&program.program), &[]);
-    config.clock_divider = (U56F8!(125_000_000) / 2000).to_fixed();
+    config.clock_divider = (rp::clocks::clk_sys_freq().to_fixed::<fixed::types::U56F8>() / 2000).to_fixed();
     config.shift_in.auto_fill = true;
     config.shift_in.direction = rp::pio::ShiftDirection::Right;
     sm.set_config(&config);
@@ -84,23 +87,25 @@ fn setup_pio_task2<'d, PIO: rp::pio::Instance, const SM: usize>(
 ) {
     // Repeatedly trigger IRQ
     let program = rp::pio::program::pio_asm!(
-        ".origin 0",
-        ".wrap_target",
-        "set x,10",
-        "delay:",
-        "jmp x-- delay [15]",
-        "irq 3 [15]",
-        ".wrap",
+        r#"
+        .origin 0
+        .wrap_target
+            set x,10
+        delay:
+            jmp x-- delay [15]
+            irq 3 [15]
+        .wrap
+        "#
     );
     let mut config = rp::pio::Config::default();
     config.use_program(&pio.load_program(&program.program), &[]);
-    config.clock_divider = (U56F8!(125_000_000) / 2000).to_fixed();
+    config.clock_divider = (rp::clocks::clk_sys_freq().to_fixed::<fixed::types::U56F8>() / 2000).to_fixed();
     sm.set_config(&config);
 }
 
 async fn pio_task2<PIO: rp::pio::Instance, const SM: usize, const IRQ: usize>(
-    mut irq: rp::pio::Irq<'static, PIO, IRQ>,
-    mut sm: rp::pio::StateMachine<'static, PIO, SM>
+    mut sm: rp::pio::StateMachine<'static, PIO, SM>,
+    mut irq: rp::pio::Irq<'static, PIO, IRQ>
 ) {
     sm.set_enable(true);
     loop {
@@ -112,13 +117,13 @@ async fn pio_task2<PIO: rp::pio::Instance, const SM: usize, const IRQ: usize>(
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let mut pio = rp::pio::Pio::new(p.PIO1, Irqs);
-    setup_pio_task0(&mut pio.common, &mut pio.sm3, p.PIN_0);
-    setup_pio_task1(&mut pio.common, &mut pio.sm1);
-    setup_pio_task2(&mut pio.common, &mut pio.sm2);
+    let mut pio0 = rp::pio::Pio::new(p.PIO0, Irqs);
+    setup_pio_task0(&mut pio0.common, &mut pio0.sm0, p.PIN_0);
+    setup_pio_task1(&mut pio0.common, &mut pio0.sm1);
+    setup_pio_task2(&mut pio0.common, &mut pio0.sm2);
     futures::join::join3(
-        pio_task0(pio.sm3),
-        pio_task1(pio.sm1),
-        pio_task2(pio.irq3, pio.sm2)
+        pio_task0(pio0.sm0),
+        pio_task1(pio0.sm1),
+        pio_task2(pio0.sm2, pio0.irq3)
     ).await;
 }
