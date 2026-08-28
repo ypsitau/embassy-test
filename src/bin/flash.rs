@@ -14,110 +14,93 @@ rp::bind_interrupts!(struct Irqs {
 
 const ADDR_OFFSET: u32 = 0x100000;
 const FLASH_SIZE: usize = 2 * 1024 * 1024;
+type Flash = rp::flash::Flash<'static, rp::peripherals::FLASH, rp::flash::Async, FLASH_SIZE>;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
     info!("Hello World!");
-    let mut flash = rp::flash::Flash::<_, rp::flash::Async, FLASH_SIZE>::new(p.FLASH, p.DMA_CH0, Irqs);
+    let mut flash = Flash::new(p.FLASH, p.DMA_CH0, Irqs);
     // Get JEDEC id
     let jedec = flash.blocking_jedec_id().unwrap();
     info!("jedec id: 0x{:x}", jedec);
     // Get unique id
-    let mut uid = [0; 8];
+    let mut uid = [0u8; 8];
     flash.blocking_unique_id(&mut uid).unwrap();
-    info!("unique id: {:?}", uid);
-    run_erase_write_sector(&mut flash, 0x00);
-    run_multiwrite_bytes(&mut flash, rp::flash::ERASE_SIZE as u32);
+    info!("unique id: {=[u8]:#x}", uid);
+    run_erase_write_sector(&mut flash, (rp::flash::ERASE_SIZE * 0) as u32);
+    run_multiwrite_bytes(&mut flash, (rp::flash::ERASE_SIZE * 1) as u32);
     run_background_read(&mut flash, (rp::flash::ERASE_SIZE * 2) as u32).await;
     loop {}
 }
 
-fn run_erase_write_sector(flash: &mut rp::flash::Flash<'_, rp::peripherals::FLASH, rp::flash::Async, FLASH_SIZE>, offset: u32) {
+fn run_erase_write_sector(flash: &mut Flash, offset: u32) {
     info!(">>>> [erase_write_sector]");
     let mut buf = [0u8; rp::flash::ERASE_SIZE];
     flash.blocking_read(ADDR_OFFSET + offset, &mut buf).unwrap();
-
-    info!("Addr of flash block is {:x}", ADDR_OFFSET + offset + rp::flash::FLASH_BASE as u32);
-    info!("Contents start with {=[u8]}", buf[0..4]);
-
+    info!("Addr of flash block is {:08x}", ADDR_OFFSET + offset + rp::flash::FLASH_BASE as u32);
+    info!("The first 4 bytes: {=[u8]:#x}", buf[0..4]);
     flash.blocking_erase(ADDR_OFFSET + offset, ADDR_OFFSET + offset + rp::flash::ERASE_SIZE as u32).unwrap();
-
     flash.blocking_read(ADDR_OFFSET + offset, &mut buf).unwrap();
-    info!("Contents after erase starts with {=[u8]}", buf[0..4]);
-    if buf.iter().any(|x| *x != 0xFF) {
+    info!("The first 4 bytes after erase: {=[u8]:#x}", buf[0..4]);
+    if buf.iter().any(|pbuf| *pbuf != 0xff) {
         defmt::panic!("unexpected");
     }
-
-    for b in buf.iter_mut() {
-        *b = 0xDA;
+    for pbuf in buf.iter_mut() {
+        *pbuf = 0xda;
     }
-
     flash.blocking_write(ADDR_OFFSET + offset, &buf).unwrap();
-
     flash.blocking_read(ADDR_OFFSET + offset, &mut buf).unwrap();
-    info!("Contents after write starts with {=[u8]}", buf[0..4]);
-    if buf.iter().any(|x| *x != 0xDA) {
+    info!("The first 4 bytes after write: {=[u8]:#x}", buf[0..4]);
+    if buf.iter().any(|pbuf| *pbuf != 0xda) {
         defmt::panic!("unexpected");
     }
 }
 
-fn run_multiwrite_bytes(flash: &mut rp::flash::Flash<'_, rp::peripherals::FLASH, rp::flash::Async, FLASH_SIZE>, offset: u32) {
+fn run_multiwrite_bytes(flash: &mut Flash, offset: u32) {
     info!(">>>> [multiwrite_bytes]");
-    let mut read_buf = [0u8; rp::flash::ERASE_SIZE];
-    flash.blocking_read(ADDR_OFFSET + offset, &mut read_buf).unwrap();
-
-    info!("Addr of flash block is {:x}", ADDR_OFFSET + offset + rp::flash::FLASH_BASE as u32);
-    info!("Contents start with {=[u8]}", read_buf[0..4]);
-
+    let mut buf = [0u8; rp::flash::ERASE_SIZE];
+    flash.blocking_read(ADDR_OFFSET + offset, &mut buf).unwrap();
+    info!("Addr of flash block is {:08x}", ADDR_OFFSET + offset + rp::flash::FLASH_BASE as u32);
+    info!("The first 4 bytes: {=[u8]:#x}", buf[0..4]);
     flash.blocking_erase(ADDR_OFFSET + offset, ADDR_OFFSET + offset + rp::flash::ERASE_SIZE as u32).unwrap();
-
-    flash.blocking_read(ADDR_OFFSET + offset, &mut read_buf).unwrap();
-    info!("Contents after erase starts with {=[u8]}", read_buf[0..4]);
-    if read_buf.iter().any(|x| *x != 0xFF) {
+    flash.blocking_read(ADDR_OFFSET + offset, &mut buf).unwrap();
+    info!("The first 4 bytes after erase: {=[u8]:#x}", buf[0..4]);
+    if buf.iter().any(|pbuf| *pbuf != 0xff) {
         defmt::panic!("unexpected");
     }
-
     flash.blocking_write(ADDR_OFFSET + offset, &[0x01]).unwrap();
     flash.blocking_write(ADDR_OFFSET + offset + 1, &[0x02]).unwrap();
     flash.blocking_write(ADDR_OFFSET + offset + 2, &[0x03]).unwrap();
     flash.blocking_write(ADDR_OFFSET + offset + 3, &[0x04]).unwrap();
-
-    flash.blocking_read(ADDR_OFFSET + offset, &mut read_buf).unwrap();
-    info!("Contents after write starts with {=[u8]}", read_buf[0..4]);
-    if &read_buf[0..4] != &[0x01, 0x02, 0x03, 0x04] {
+    flash.blocking_read(ADDR_OFFSET + offset, &mut buf).unwrap();
+    info!("The first 4 bytes after write: {=[u8]:#x}", buf[0..4]);
+    if &buf[0..4] != &[0x01, 0x02, 0x03, 0x04] {
         defmt::panic!("unexpected");
     }
 }
 
-async fn run_background_read(flash: &mut rp::flash::Flash<'_, rp::peripherals::FLASH, rp::flash::Async, FLASH_SIZE>, offset: u32) {
+async fn run_background_read(flash: &mut Flash, offset: u32) {
     info!(">>>> [background_read]");
-
     let mut buf = [0u32; 8];
     flash.background_read(ADDR_OFFSET + offset, &mut buf).unwrap().await;
-
-    info!("Addr of flash block is {:x}", ADDR_OFFSET + offset + rp::flash::FLASH_BASE as u32);
-    info!("Contents start with {=u32:x}", buf[0]);
-
+    info!("Addr of flash block is {:08x}", ADDR_OFFSET + offset + rp::flash::FLASH_BASE as u32);
+    info!("The first 4 bytes: {=u32:x}", buf[0]);
     flash.blocking_erase(ADDR_OFFSET + offset, ADDR_OFFSET + offset + rp::flash::ERASE_SIZE as u32).unwrap();
-
     flash.background_read(ADDR_OFFSET + offset, &mut buf).unwrap().await;
-    info!("Contents after erase starts with {=u32:x}", buf[0]);
-    if buf.iter().any(|x| *x != 0xFFFFFFFF) {
+    info!("The first 4 bytes after erase: {=u32:x}", buf[0]);
+    if buf.iter().any(|pbuf| *pbuf != 0xffffffff) {
         defmt::panic!("unexpected");
     }
-
-    for b in buf.iter_mut() {
-        *b = 0xDABA1234;
+    for pbuf in buf.iter_mut() {
+        *pbuf = 0xdaba1234;
     }
-
     flash.blocking_write(ADDR_OFFSET + offset, unsafe {
         core::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len() * 4)
     }).unwrap();
-
     flash.background_read(ADDR_OFFSET + offset, &mut buf).unwrap().await;
-    info!("Contents after write starts with {=u32:x}", buf[0]);
-    if buf.iter().any(|x| *x != 0xDABA1234) {
+    info!("The first 4 bytes after write: {=u32:x}", buf[0]);
+    if buf.iter().any(|pbuf| *pbuf != 0xdaba1234) {
         defmt::panic!("unexpected");
     }
 }
