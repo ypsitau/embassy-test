@@ -13,10 +13,7 @@ use core::cell::{Cell, RefCell};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp as rp;
-use embassy_rp::adc::{self, Adc, Blocking};
-use embassy_rp::gpio::Pull;
 use embassy_rp::interrupt;
-use embassy_rp::pwm::{Config, Pwm};
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
@@ -26,30 +23,26 @@ use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
-static PWM: Mutex<CriticalSectionRawMutex, RefCell<Option<Pwm>>> = Mutex::new(RefCell::new(None));
-static ADC: Mutex<CriticalSectionRawMutex, RefCell<Option<(Adc<Blocking>, adc::Channel)>>> =
+static PWM: Mutex<CriticalSectionRawMutex, RefCell<Option<rp::pwm::Pwm>>> = Mutex::new(RefCell::new(None));
+static ADC: Mutex<CriticalSectionRawMutex, RefCell<Option<(rp::adc::Adc<rp::adc::Blocking>, rp::adc::Channel)>>> =
     Mutex::new(RefCell::new(None));
 static ADC_VALUES: Channel<CriticalSectionRawMutex, u16, 2048> = Channel::new();
-
-//rp::bind_interrupts!(struct Irqs {
-//    PWM_IRQ_WRAP => PWM_IRQ_WRAP;
-//});
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    let adc = Adc::new_blocking(p.ADC, Default::default());
-    let p26 = adc::Channel::new_pin(p.PIN_26, Pull::None);
+    let adc = rp::adc::Adc::new_blocking(p.ADC, Default::default());
+    let p26 = rp::adc::Channel::new_pin(p.PIN_26, rp::gpio::Pull::None);
     ADC.lock(|a| a.borrow_mut().replace((adc, p26)));
 
-    let pwm = Pwm::new_output_b(p.PWM_SLICE4, p.PIN_25, Default::default());
+    let pwm = rp::pwm::Pwm::new_output_b(p.PWM_SLICE4, p.PIN_25, Default::default());
     PWM.lock(|p| p.borrow_mut().replace(pwm));
 
     // Enable the interrupt for pwm slice 4
     rp::pac::PWM.inte().modify(|w| w.set_ch4(true));
     unsafe {
-        cortex_m::peripheral::NVIC::unmask(interrupt::PWM_IRQ_WRAP);
+        cortex_m::peripheral::NVIC::unmask(rp::interrupt::PWM_IRQ_WRAP);
     }
 
     // Tasks require their resources to have 'static lifetime
@@ -66,7 +59,7 @@ async fn main(spawner: Spawner) {
         info!("adc average: {:?}", avg.get());
 
         // Update the pwm duty cycle, based on the averaged adc reading
-        let mut config = Config::default();
+        let mut config = rp::pwm::Config::default();
         config.compare_b = ((avg.get() as f32 / 4095.0) * config.top as f32) as _;
         PWM.lock(|p| p.borrow_mut().as_mut().unwrap().set_config(&config));
     }
