@@ -47,7 +47,7 @@ async fn main(spawner: Spawner) {
     PWM.lock(|p| p.borrow_mut().replace(pwm));
 
     // Enable the interrupt for pwm slice 4
-    //rp::pac::PWM.inte().modify(|w| w.set_ch4(true));
+    rp::pac::PWM.inte().modify(|w| w.set_ch4(true));
     unsafe {
         cortex_m::peripheral::NVIC::unmask(interrupt::PWM_IRQ_WRAP);
     }
