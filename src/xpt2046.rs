@@ -68,6 +68,9 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         Self::draw_cross(display, x2, y2);
         let (xraw2, yraw2) = self.get_pos_for_calibration(&mut delay).await;
         display.clear(eg::pixelcolor::Rgb565::BLACK).ok();
+        while let Some(_) = self.read_pos_raw() {
+            delay.delay_ms(100).await;
+        }
         self.calibration.xraw_min = xraw1 - (xraw2 - xraw1) * x1 / (x2 - x1);
         self.calibration.xraw_max = xraw1 + (xraw2 - xraw1) * (self.calibration.x_range - x1) / (x2 - x1);
         self.calibration.yraw_min = yraw1 - (yraw2 - yraw1) * y1 / (y2 - y1);
