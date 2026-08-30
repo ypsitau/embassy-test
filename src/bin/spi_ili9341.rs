@@ -80,7 +80,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
-        xpt2046::Driver::new(spi_device, xpt2046::Calibration::default())
+        xpt2046::Driver::new(spi_device, xpt2046::Calibration::default(), true)
     };
     let mut display = {
         use mipidsi::options::{Orientation, Rotation, ColorOrder};
@@ -113,6 +113,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .unwrap()
     };
     touch.calibrate(&mut display, &mut embassy_time::Delay).await;
+    defmt::info!("Calibration: {:?}", touch.calibration);
     display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
