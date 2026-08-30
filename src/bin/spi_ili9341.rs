@@ -80,7 +80,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
-        xpt2046::Driver::new(spi_device)
+        xpt2046::Driver::new(spi_device, xpt2046::Calibration::default())
     };
     let mut display = {
         use mipidsi::options::{Orientation, Rotation, ColorOrder};
@@ -112,6 +112,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .init(&mut embassy_time::Delay)
             .unwrap()
     };
+    touch.calibrate(&mut display, &mut embassy_time::Delay).await;
     display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
@@ -141,6 +142,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
             time::Timer::after_millis(30).await;
         }
     };
-    let fut_touch = touch.run(&shared_pos, embassy_time::Delay);
+    let fut_touch = touch.run(&shared_pos, embassy_time::Delay, 5);
     futures::join::join(fut_main, fut_touch).await;
 }
