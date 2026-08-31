@@ -62,17 +62,15 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         const NUM_SAMPLES: usize = 6;
         let mut xraw_hist = heapless::HistoryBuf::<u16, NUM_SAMPLES>::new();
         let mut yraw_hist = heapless::HistoryBuf::<u16, NUM_SAMPLES>::new();
-        let mut xraw_sorted = heapless::Vec::<u16, NUM_SAMPLES>::new();
-        let mut yraw_sorted = heapless::Vec::<u16, NUM_SAMPLES>::new();
+        let mut xraw_sorted = [0u16; NUM_SAMPLES];
+        let mut yraw_sorted = [0u16; NUM_SAMPLES];
         loop {
-            if let Some((x, y)) = self.read_pos_raw() {
-                xraw_hist.write(x);
-                yraw_hist.write(y);
+            if let Some((xraw, yraw)) = self.read_pos_raw() {
+                xraw_hist.write(xraw);
+                yraw_hist.write(yraw);
                 if xraw_hist.is_full() {
-                    xraw_sorted.clear();
-                    yraw_sorted.clear();
-                    xraw_hist.iter().for_each(|&x| xraw_sorted.push(x).unwrap());
-                    yraw_hist.iter().for_each(|&y| yraw_sorted.push(y).unwrap());
+                    xraw_sorted.copy_from_slice(xraw_hist.as_slice());
+                    yraw_sorted.copy_from_slice(yraw_hist.as_slice());
                     xraw_sorted.sort_unstable();
                     yraw_sorted.sort_unstable();
                     let idx = xraw_sorted.len() / 2;
@@ -96,6 +94,14 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         (x, y)
     }
     pub fn read_pos_raw(&mut self) -> Option<(u16, u16)> {
+        let (xraw, yraw) = self.read_pos_adc()?;
+        if self.rotate90 {
+            Some((yraw, xraw))
+        } else {
+            Some((xraw, yraw))
+        }
+    }
+    pub fn read_pos_adc(&mut self) -> Option<(u16, u16)> {
         let mut xbytes = [0u8; 2];
         let mut ybytes = [0u8; 2];
         let mut zbytes = [0u8; 1];
@@ -112,8 +118,6 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         let yraw = (((ybytes[0] as u16) << 4) | (ybytes[1] as u16 >> 4)) as u16;
         if zbytes[0] < 3 {
             None
-        } else if self.rotate90 {
-            Some((yraw, xraw))
         } else {
             Some((xraw, yraw))
         }
@@ -139,7 +143,7 @@ pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
         ptraws.push(read_pos_raw_for_calibration(touch, &mut delay).await).ok();
     }
     display.clear(color_bg).ok();
-    while let Some(_) = touch.read_pos_raw() {
+    while let Some(_) = touch.read_pos_adc() {
         delay.delay_ms(100).await;
     }
     let (xraw1, yraw1) = ptraws[0];
@@ -174,9 +178,9 @@ async fn read_pos_raw_for_calibration(touch: &mut Driver<impl hal::spi::SpiDevic
     let mut xraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
     let mut yraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
     loop {
-        if let Some((x, y)) = touch.read_pos_raw() {
-            xraws.push(x).unwrap();
-            yraws.push(y).unwrap();
+        if let Some((xraw, yraw)) = touch.read_pos_raw() {
+            xraws.push(xraw).unwrap();
+            yraws.push(yraw).unwrap();
             if xraws.is_full() { break; }
         } else {
             xraws.clear();
