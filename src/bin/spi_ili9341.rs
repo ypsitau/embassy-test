@@ -88,8 +88,11 @@ async fn main(_spawner: embassy_executor::Spawner) {
             .init(&mut embassy_time::Delay)
             .unwrap()
     };
-    touch.calibrate(&mut display, &mut embassy_time::Delay).await;
-    defmt::info!("Calibration: {:?}", touch.calibration);
+    if let Some(calibration) = xpt2046::calibrate(&mut touch, &mut display, &mut embassy_time::Delay,
+            eg::pixelcolor::Rgb565::GREEN, eg::pixelcolor::Rgb565::BLACK).await {
+        defmt::info!("Calibration: {:?}", calibration);
+        touch.calibration = calibration;
+    }
     display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),

@@ -15,10 +15,10 @@ pub struct Calibration {
 impl Default for Calibration {
     fn default() -> Self {
         Self {
-            xraw_left: 0x00c8,
-            xraw_right: 0x0760,
-            yraw_top: 0x00d0,
-            yraw_bottom: 0x06d0,
+            xraw_left: 0x0000,
+            xraw_right: 0x07ff,
+            yraw_top: 0x0000,
+            yraw_bottom: 0x07ff,
         }
     }
 }
@@ -58,18 +58,6 @@ impl<SpiDevice: hal::spi::SpiDevice> Builder<SpiDevice> {
 }
 
 impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
-    fn draw_cross(display: &mut impl DrawTarget<Color = eg::pixelcolor::Rgb565>, x: i32, y: i32) {
-        const CROSS_SIZE: i32 = 10;
-        const CROSS_THICKNESS: u32 = 4;
-        eg::primitives::Line::new(Point::new(x - CROSS_SIZE, y), Point::new(x + CROSS_SIZE, y))
-            .into_styled(eg::primitives::PrimitiveStyle::with_stroke(
-                eg::pixelcolor::Rgb565::WHITE, CROSS_THICKNESS))
-            .draw(display).ok();
-        eg::primitives::Line::new(Point::new(x, y - CROSS_SIZE), Point::new(x, y + CROSS_SIZE))
-            .into_styled(eg::primitives::PrimitiveStyle::with_stroke(
-                eg::pixelcolor::Rgb565::WHITE, CROSS_THICKNESS))
-            .draw(display).ok();
-    }
     pub async fn run(&mut self, mut delay: impl hal_async::delay::DelayNs, sampling_delay: u32, mut on_pos_updated: impl FnMut(Option<(i32, i32)>)) {
         const NUM_SAMPLES: usize = 6;
         let mut xraw_hist = heapless::HistoryBuf::<u16, NUM_SAMPLES>::new();
@@ -130,55 +118,77 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
             Some((xraw, yraw))
         }
     }
-    pub async fn calibrate(&mut self, display: &mut impl DrawTarget<Color = eg::pixelcolor::Rgb565>, mut delay: impl hal_async::delay::DelayNs) {
-        const DISTANCE_FROM_EDGE: i32 = 20;
-        let (x_left, y_top) = (DISTANCE_FROM_EDGE, DISTANCE_FROM_EDGE);
-        let (x_right, y_bottom) = (
-            self.x_range - DISTANCE_FROM_EDGE,
-            self.y_range - DISTANCE_FROM_EDGE);
-        display.clear(eg::pixelcolor::Rgb565::BLACK).ok();
-        Self::draw_cross(display, x_left, y_top);
-        let (xraw1, yraw1) = self.read_pos_raw_for_calibration(&mut delay).await;
-        display.clear(eg::pixelcolor::Rgb565::BLACK).ok();
-        Self::draw_cross(display, x_right, y_bottom);
-        let (xraw2, yraw2) = self.read_pos_raw_for_calibration(&mut delay).await;
-        display.clear(eg::pixelcolor::Rgb565::BLACK).ok();
-        while let Some(_) = self.read_pos_raw() {
-            delay.delay_ms(100).await;
-        }
-        let xraw_left = xraw1 + (xraw2 - xraw1) * (-x_left) / (x_right - x_left);
-        let xraw_right = xraw1 + (xraw2 - xraw1) * (self.x_range - x_left) / (x_right - x_left);
-        let yraw_top = yraw1 + (yraw2 - yraw1) * (-y_top) / (y_bottom - y_top);
-        let yraw_bottom = yraw1 + (yraw2 - yraw1) * (self.y_range - y_top) / (y_bottom - y_top);
-        if xraw_left == xraw_right || yraw_top == yraw_bottom {
-            defmt::warn!("Calibration failed: xraw_left == xraw_right or yraw_top == yraw_bottom");
-            return;
-        }
-        self.calibration = Calibration { xraw_left, xraw_right, yraw_top, yraw_bottom, };
-    }
-    async fn read_pos_raw_for_calibration(&mut self, delay: &mut impl hal_async::delay::DelayNs) -> (i32, i32) {
-        const NUM_SAMPLES: usize = 10;
-        let mut xraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
-        let mut yraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
-        loop {
-            if let Some((x, y)) = self.read_pos_raw() {
-                xraws.push(x).unwrap();
-                yraws.push(y).unwrap();
-                if xraws.is_full() { break; }
-            } else {
-                xraws.clear();
-                yraws.clear();
-            }
-            delay.delay_ms(100).await;
-        }
-        xraws.sort_unstable();
-        yraws.sort_unstable();
-        let idx = xraws.len() / 2;
-        let xraw_avg = (xraws[idx] + xraws[idx - 1] + xraws[idx + 1]) / 3;
-        let yraw_avg = (yraws[idx] + yraws[idx - 1] + yraws[idx + 1]) / 3;
-        (xraw_avg as i32, yraw_avg as i32)
-    }
     const fn compose_cmd(adc: u8, mode: u8, reference: u8, power_down_mode: u8) -> u8 {
         (0b1 << 7) | (adc << 4) | (mode << 3) | (reference << 2) | (power_down_mode << 0)
     }
+}
+
+pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
+        touch: &mut Driver<impl hal::spi::SpiDevice>, display: &mut impl DrawTarget<Color = Color>,
+        mut delay: impl hal_async::delay::DelayNs,
+        color: Color, color_bg: Color) -> Option<Calibration> {
+    struct Point { x: i32, y: i32, }
+    const DISTANCE_FROM_EDGE: i32 = 20;
+    let pts = [
+        Point { x: DISTANCE_FROM_EDGE, y: DISTANCE_FROM_EDGE },
+        Point { x: touch.x_range - DISTANCE_FROM_EDGE, y: touch.y_range - DISTANCE_FROM_EDGE },
+    ];
+    let mut ptraws: [(i32, i32); 2] = [(0, 0); 2];
+    for (i, pt) in pts.iter().enumerate() {
+        display.clear(color_bg).ok();
+        draw_cross(display, pt.x, pt.y, color);
+        ptraws[i] = read_pos_raw_for_calibration(touch, &mut delay).await;
+    }
+    display.clear(color_bg).ok();
+    while let Some(_) = touch.read_pos_raw() {
+        delay.delay_ms(100).await;
+    }
+    let (xraw1, yraw1) = ptraws[0];
+    let (xraw2, yraw2) = ptraws[1];
+    let pt1 = &pts[0];
+    let pt2 = &pts[1];
+    let xraw_left = xraw1 + (xraw2 - xraw1) * (-pt1.x) / (pt2.x - pt1.x);
+    let xraw_right = xraw1 + (xraw2 - xraw1) * (touch.x_range - pt1.x) / (pt2.x - pt1.x);
+    let yraw_top = yraw1 + (yraw2 - yraw1) * (-pt1.y) / (pt2.y - pt1.y);
+    let yraw_bottom = yraw1 + (yraw2 - yraw1) * (touch.y_range - pt1.y) / (pt2.y - pt1.y);
+    if xraw_left == xraw_right || yraw_top == yraw_bottom {
+        defmt::warn!("Calibration failed: xraw_left == xraw_right or yraw_top == yraw_bottom");
+        return None;
+    }
+    Some(Calibration { xraw_left, xraw_right, yraw_top, yraw_bottom, })
+}
+
+fn draw_cross<Color: eg::pixelcolor::PixelColor>(display: &mut impl DrawTarget<Color = Color>, x: i32, y: i32, color: Color) {
+    const CROSS_SIZE: i32 = 10;
+    const CROSS_THICKNESS: u32 = 4;
+    eg::primitives::Line::new(Point::new(x - CROSS_SIZE, y), Point::new(x + CROSS_SIZE, y))
+        .into_styled(eg::primitives::PrimitiveStyle::with_stroke(color, CROSS_THICKNESS))
+        .draw(display).ok();
+    eg::primitives::Line::new(Point::new(x, y - CROSS_SIZE), Point::new(x, y + CROSS_SIZE))
+        .into_styled(eg::primitives::PrimitiveStyle::with_stroke(color, CROSS_THICKNESS))
+        .draw(display).ok();
+}
+
+async fn read_pos_raw_for_calibration(touch: &mut Driver<impl hal::spi::SpiDevice>,
+        delay: &mut impl hal_async::delay::DelayNs) -> (i32, i32) {
+    const NUM_SAMPLES: usize = 10;
+    let mut xraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
+    let mut yraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
+    loop {
+        if let Some((x, y)) = touch.read_pos_raw() {
+            xraws.push(x).unwrap();
+            yraws.push(y).unwrap();
+            if xraws.is_full() { break; }
+        } else {
+            xraws.clear();
+            yraws.clear();
+        }
+        delay.delay_ms(100).await;
+    }
+    xraws.sort_unstable();
+    yraws.sort_unstable();
+    let idx = xraws.len() / 2;
+    let xraw_avg = (xraws[idx] + xraws[idx - 1] + xraws[idx + 1]) / 3;
+    let yraw_avg = (yraws[idx] + yraws[idx - 1] + yraws[idx + 1]) / 3;
+    (xraw_avg as i32, yraw_avg as i32)
 }
