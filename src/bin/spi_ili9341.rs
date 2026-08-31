@@ -29,33 +29,6 @@ type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
     embassy_sync::blocking_mutex::raw::NoopRawMutex,
     RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
 
-type MutexPos = embassy_sync::blocking_mutex::Mutex<
-    embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    RefCell<Option<xpt2046::Pos>>>;
-
-struct SharedPos {
-    mutex_pos: MutexPos,
-}
-
-impl SharedPos {
-    fn new() -> Self {
-        Self {
-            mutex_pos: MutexPos::new(RefCell::new(None)),
-        }
-    }
-}
-
-impl xpt2046::SharedPos for SharedPos {
-    fn get_pos(&self) -> Option<xpt2046::Pos> {
-        self.mutex_pos.lock(|p| *p.borrow())
-    }
-    fn set_pos(&self, pos: Option<xpt2046::Pos>) {
-        self.mutex_pos.lock(|p| { *p.borrow_mut() = pos; });
-    }
-}
-
-use xpt2046::SharedPos as _;
-
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = rp::init(Default::default());
@@ -71,16 +44,19 @@ async fn main(_spawner: embassy_executor::Spawner) {
         MutexSPI1::new(RefCell::new(spi))
     };
     let mut touch = {
+        let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
+        let _pin_touch_irq  = p.PIN_15;
         let spi_device = {
-            let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
-            let _pin_touch_irq  = p.PIN_15;
             let mut config = rp::spi::Config::default();
             config.frequency = 200_000;
             config.phase = rp::spi::Phase::CaptureOnSecondTransition;
             config.polarity = rp::spi::Polarity::IdleHigh;
             hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
         };
-        xpt2046::Driver::new(spi_device, xpt2046::Calibration::default(), true)
+        xpt2046::Builder::new(spi_device, 240, 320)
+            .calibration(xpt2046::Calibration::default())
+            .rotate90(true)
+            .build()
     };
     let mut display = {
         use mipidsi::options::{Orientation, Rotation, ColorOrder};
@@ -131,18 +107,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
         .fill_color(eg::pixelcolor::Rgb565::WHITE)
         .build();
-    let shared_pos = SharedPos::new();
+    let mutex_pos = embassy_sync::blocking_mutex::Mutex::<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex, RefCell<Option<(i32, i32)>>>::new(RefCell::new(None));
     let fut_main = async {
         loop {
-            if let Some(pos) = shared_pos.get_pos() {
+            if let Some(pos) = mutex_pos.lock(|p| *p.borrow()) {
+                let (x, y) = pos;
                 eg::primitives::Rectangle::new(
-                    Point::new(pos.x - 4, pos.y - 4),
+                    Point::new(x - 4, y - 4),
                     Size::new(8, 8)
                 ).into_styled(style_dot).draw(&mut display).unwrap();
             }
             time::Timer::after_millis(30).await;
         }
     };
-    let fut_touch = touch.run(&shared_pos, embassy_time::Delay, 5);
+    let fut_touch = touch.run(embassy_time::Delay, 5, |pos| {
+        mutex_pos.lock(|p| { *p.borrow_mut() = pos; });
+    });
     futures::join::join(fut_main, fut_touch).await;
 }
