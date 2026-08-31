@@ -38,26 +38,26 @@ async fn main(spawner: Spawner) {
     //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
     //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
-    let spi = {
-        let mut pio = rp::pio::Pio::new(p.PIO0, Irqs);
-        let sm = pio.sm0;
-        let clock_divider = cyw43_pio::DEFAULT_CLOCK_DIVIDER;
-        let irq = pio.irq0;
-        let cs = rp::gpio::Output::new(p.PIN_25, rp::gpio::Level::High);
-        let pin_dio = p.PIN_24;
-        let pin_clk = p.PIN_29;
-        let dma = rp::dma::Channel::new(p.DMA_CH0, Irqs);
-        cyw43_pio::PioSpi::new(&mut pio.common, sm, clock_divider, irq, cs, pin_dio, pin_clk, dma)
-    };
-    let fw = aligned_bytes!("../../cyw43-firmware/43439A0.bin");
-    let clm = aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
-    let nvram = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
     let mut control = {
         let state = {
             static STATIC_CELL: StaticCell<cyw43::State> = StaticCell::new();
             STATIC_CELL.init(cyw43::State::new())
         };
         let pwr = rp::gpio::Output::new(p.PIN_23, rp::gpio::Level::Low);
+        let spi = {
+            let mut pio = rp::pio::Pio::new(p.PIO0, Irqs);
+            let sm = pio.sm0;
+            let clock_divider = cyw43_pio::DEFAULT_CLOCK_DIVIDER;
+            let irq = pio.irq0;
+            let cs = rp::gpio::Output::new(p.PIN_25, rp::gpio::Level::High);
+            let pin_dio = p.PIN_24;
+            let pin_clk = p.PIN_29;
+            let dma = rp::dma::Channel::new(p.DMA_CH0, Irqs);
+            cyw43_pio::PioSpi::new(&mut pio.common, sm, clock_divider, irq, cs, pin_dio, pin_clk, dma)
+        };
+        let fw = aligned_bytes!("../../cyw43-firmware/43439A0.bin");
+        let clm = aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+        let nvram = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
         let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
         spawner.spawn(unwrap!(cyw43_task(runner)));
         control.init(clm).await;
