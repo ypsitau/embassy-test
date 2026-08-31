@@ -38,7 +38,7 @@ async fn main(spawner: Spawner) {
     //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
     //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
-    let mut control = {
+    let (_net_device, mut control) =  {
         let state = {
             static STATIC_CELL: StaticCell<cyw43::State> = StaticCell::new();
             STATIC_CELL.init(cyw43::State::new())
@@ -58,11 +58,11 @@ async fn main(spawner: Spawner) {
         let fw = aligned_bytes!("../../cyw43-firmware/43439A0.bin");
         let clm = aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
         let nvram = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
-        let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
+        let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
         spawner.spawn(unwrap!(cyw43_task(runner)));
         control.init(clm).await;
         control.set_power_management(cyw43::PowerManagementMode::PowerSave).await;
-        control
+        (net_device, control)
     };
     let mut scanner = control.scan(Default::default()).await;
     while let Some(bss) = scanner.next().await {
