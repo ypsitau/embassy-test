@@ -28,7 +28,7 @@ async fn main(_spawner: Spawner) {
     //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
     //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
-    let (_net_device, mut control, runner, clm) =  {
+    let (_cyw43_net_device, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
         let state = {
             static STATIC_CELL: StaticCell<cyw43::State> = StaticCell::new();
             STATIC_CELL.init(cyw43::State::new())
@@ -51,16 +51,16 @@ async fn main(_spawner: Spawner) {
         let (net_device, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
         (net_device, control, runner, clm)
     };
-    let fut_runner = runner.run();
+    let fut_cyw43_runner = cyw43_runner.run();
     let fut_scan = async {
-        control.init(clm).await;
-        control.set_power_management(cyw43::PowerManagementMode::PowerSave).await;
-        let mut scanner = control.scan(Default::default()).await;
+        cyw43_control.init(cyw43_clm).await;
+        cyw43_control.set_power_management(cyw43::PowerManagementMode::PowerSave).await;
+        let mut scanner = cyw43_control.scan(Default::default()).await;
         while let Some(bss) = scanner.next().await {
             if let Ok(ssid_str) = str::from_utf8(&bss.ssid) {
                 info!("scanned {} == {:x}", ssid_str, bss.bssid);
             }
         }
     };
-    embassy_futures::join::join(fut_scan, fut_runner).await;
+    embassy_futures::join::join(fut_scan, fut_cyw43_runner).await;
 }
