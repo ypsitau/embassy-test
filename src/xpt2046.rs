@@ -127,17 +127,16 @@ pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
         touch: &mut Driver<impl hal::spi::SpiDevice>, display: &mut impl DrawTarget<Color = Color>,
         mut delay: impl hal_async::delay::DelayNs,
         color: Color, color_bg: Color) -> Option<Calibration> {
-    struct Point { x: i32, y: i32, }
     const DISTANCE_FROM_EDGE: i32 = 20;
     let pts = [
-        Point { x: DISTANCE_FROM_EDGE, y: DISTANCE_FROM_EDGE },
-        Point { x: touch.x_range - DISTANCE_FROM_EDGE, y: touch.y_range - DISTANCE_FROM_EDGE },
+        (DISTANCE_FROM_EDGE, DISTANCE_FROM_EDGE),
+        (touch.x_range - DISTANCE_FROM_EDGE, touch.y_range - DISTANCE_FROM_EDGE),
     ];
-    let mut ptraws: [(i32, i32); 2] = [(0, 0); 2];
-    for (i, pt) in pts.iter().enumerate() {
+    let mut ptraws: heapless::Vec::<(i32, i32), 2> = heapless::Vec::new();
+    for (x, y) in &pts {
         display.clear(color_bg).ok();
-        draw_cross(display, pt.x, pt.y, color);
-        ptraws[i] = read_pos_raw_for_calibration(touch, &mut delay).await;
+        draw_cross(display, *x, *y, color);
+        ptraws.push(read_pos_raw_for_calibration(touch, &mut delay).await).ok();
     }
     display.clear(color_bg).ok();
     while let Some(_) = touch.read_pos_raw() {
@@ -145,12 +144,12 @@ pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
     }
     let (xraw1, yraw1) = ptraws[0];
     let (xraw2, yraw2) = ptraws[1];
-    let pt1 = &pts[0];
-    let pt2 = &pts[1];
-    let xraw_left = xraw1 + (xraw2 - xraw1) * (-pt1.x) / (pt2.x - pt1.x);
-    let xraw_right = xraw1 + (xraw2 - xraw1) * (touch.x_range - pt1.x) / (pt2.x - pt1.x);
-    let yraw_top = yraw1 + (yraw2 - yraw1) * (-pt1.y) / (pt2.y - pt1.y);
-    let yraw_bottom = yraw1 + (yraw2 - yraw1) * (touch.y_range - pt1.y) / (pt2.y - pt1.y);
+    let (x_left, y_top) = pts[0];
+    let (x_right, y_bottom) = pts[1];
+    let xraw_left = xraw1 + (xraw2 - xraw1) * (-x_left) / (x_right - x_left);
+    let xraw_right = xraw1 + (xraw2 - xraw1) * (touch.x_range - x_left) / (x_right - x_left);
+    let yraw_top = yraw1 + (yraw2 - yraw1) * (-y_top) / (y_bottom - y_top);
+    let yraw_bottom = yraw1 + (yraw2 - yraw1) * (touch.y_range - y_top) / (y_bottom - y_top);
     if xraw_left == xraw_right || yraw_top == yraw_bottom {
         defmt::warn!("Calibration failed: xraw_left == xraw_right or yraw_top == yraw_bottom");
         return None;
