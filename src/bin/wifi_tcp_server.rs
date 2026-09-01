@@ -71,13 +71,6 @@ async fn main(spawner: Spawner) {
         let (net_device, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
         (net_device, control, runner, clm)
     };
-    spawner.spawn(unwrap!(cyw43_task(cyw43_runner)));
-    cyw43_control.init(cyw43_clm).await;
-    cyw43_control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
-        .await;
-
-    // Init network stack
     let (stack, net_runner) = {
         let config = net::Config::dhcpv4(Default::default());
         //let config = net::Config::ipv4_static(net::StaticConfigV4 {
@@ -92,9 +85,12 @@ async fn main(spawner: Spawner) {
         let seed = rng.next_u64();
         net::new(net_device, config, resources, seed)
     };
-
+    spawner.spawn(unwrap!(cyw43_task(cyw43_runner)));
     spawner.spawn(unwrap!(net_task(net_runner)));
-
+    cyw43_control.init(cyw43_clm).await;
+    cyw43_control
+        .set_power_management(cyw43::PowerManagementMode::PowerSave)
+        .await;
     while let Err(err) = cyw43_control
         .join(private_info::WIFI_NETWORK, cyw43::JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
         .await
