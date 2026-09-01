@@ -85,68 +85,68 @@ async fn main(spawner: Spawner) {
         let seed = rng.next_u64();
         net::new(net_device, config, resources, seed)
     };
-    spawner.spawn(unwrap!(cyw43_task(cyw43_runner)));
+    let fut_cys43_runner = cyw43_runner.run();
+    //let fut_net_runner = net_runner.run();
     spawner.spawn(unwrap!(net_task(net_runner)));
-    cyw43_control.init(cyw43_clm).await;
-    cyw43_control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
-        .await;
-    while let Err(err) = cyw43_control
-        .join(private_info::WIFI_NETWORK, cyw43::JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
-        .await
-    {
-        info!("join failed: {:?}", err);
-    }
-
-    info!("waiting for link...");
-    stack.wait_link_up().await;
-
-    info!("waiting for DHCP...");
-    stack.wait_config_up().await;
-
-    // And now we can use it!
-    info!("Stack is up!");
-
-    let mut rx_buffer = [0; 4096];
-    let mut tx_buffer = [0; 4096];
-    let mut buf = [0; 4096];
-
-    loop {
-        let mut socket = net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        socket.set_timeout(Some(Duration::from_secs(10)));
-
-        cyw43_control.gpio_set(0, false).await;
-        info!("Listening on TCP:1234...");
-        if let Err(e) = socket.accept(1234).await {
-            warn!("accept error: {:?}", e);
-            continue;
+    let fut_main = async {
+        cyw43_control.init(cyw43_clm).await;
+        cyw43_control
+            .set_power_management(cyw43::PowerManagementMode::PowerSave)
+            .await;
+        while let Err(err) = cyw43_control
+            .join(private_info::WIFI_NETWORK, cyw43::JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
+            .await
+        {
+            info!("join failed: {:?}", err);
         }
-
-        info!("Received connection from {:?}", socket.remote_endpoint());
-        cyw43_control.gpio_set(0, true).await;
-
+        info!("waiting for link...");
+        stack.wait_link_up().await;
+        info!("waiting for DHCP...");
+        stack.wait_config_up().await;
+        // And now we can use it!
+        info!("Stack is up!");
+        let mut rx_buffer = [0; 4096];
+        let mut tx_buffer = [0; 4096];
+        let mut buf = [0; 4096];
         loop {
-            let n = match socket.read(&mut buf).await {
-                Ok(0) => {
-                    warn!("read EOF");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    warn!("read error: {:?}", e);
-                    break;
-                }
-            };
+            let mut socket = net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+            socket.set_timeout(Some(Duration::from_secs(10)));
 
-            info!("rxd {}", from_utf8(&buf[..n]).unwrap());
+            cyw43_control.gpio_set(0, false).await;
+            info!("Listening on TCP:1234...");
+            if let Err(e) = socket.accept(1234).await {
+                warn!("accept error: {:?}", e);
+                continue;
+            }
 
-            match socket.write_all(&buf[..n]).await {
-                Ok(()) => {}
-                Err(e) => {
-                    warn!("write error: {:?}", e);
-                    break;
-                }
-            };
+            info!("Received connection from {:?}", socket.remote_endpoint());
+            cyw43_control.gpio_set(0, true).await;
+
+            loop {
+                let n = match socket.read(&mut buf).await {
+                    Ok(0) => {
+                        warn!("read EOF");
+                        break;
+                    }
+                    Ok(n) => n,
+                    Err(e) => {
+                        warn!("read error: {:?}", e);
+                        break;
+                    }
+                };
+
+                info!("rxd {}", from_utf8(&buf[..n]).unwrap());
+
+                match socket.write_all(&buf[..n]).await {
+                    Ok(()) => {}
+                    Err(e) => {
+                        warn!("write error: {:?}", e);
+                        break;
+                    }
+                };
+            }
         }
-    }
+    };
+    //embassy_futures::join::join3(fut_main, fut_cys43_runner, fut_net_runner).await;
+    embassy_futures::join::join(fut_main, fut_cys43_runner).await;
 }
