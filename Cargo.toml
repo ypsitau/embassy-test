@@ -52,8 +52,21 @@ embedded-hal-bus = "0.3.0"
 smart-leds = "0.4.0"
 fixed-macro = "1.2.0"
 critical-section = "1.2.0"
-cyw43 = "0.7.0"
+cyw43 = { version = "0.7.0", features = ["defmt"] }
 cyw43-pio = "0.10.0"
+embassy-net = { version = "0.9.1", features = [
+    "defmt",
+    "icmp",
+    "tcp",
+    "udp",
+    "raw",
+    "dhcpv4",
+    "medium-ethernet",
+    "dns",
+    "proto-ipv4",
+    "proto-ipv6",
+    "multicast",
+] }
 
 [target.'cfg( target_arch = "arm" )'.dependencies]
 panic-probe = { version = "1", features = ["print-defmt"] }

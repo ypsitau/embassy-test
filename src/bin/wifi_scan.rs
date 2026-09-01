@@ -18,33 +18,32 @@ rp::bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    info!("Hello World!");
-
     let p = embassy_rp::init(Default::default());
-    // To make flashing faster for development, you may want to flash the firmwares independently
-    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-    //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
-
-    let (_cyw43_net_device, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
+    let (_net_device, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
+        let pin_pwr = p.PIN_23;
+        let pin_dio = p.PIN_24;
+        let pin_cs = p.PIN_25;
+        let pin_clk = p.PIN_29;
         let state = {
             static STATIC_CELL: StaticCell<cyw43::State> = StaticCell::new();
             STATIC_CELL.init(cyw43::State::new())
         };
-        let pwr = rp::gpio::Output::new(p.PIN_23, rp::gpio::Level::Low);
+        let pwr = rp::gpio::Output::new(pin_pwr, rp::gpio::Level::Low);
         let spi = {
             let mut pio = rp::pio::Pio::new(p.PIO0, Irqs);
             let sm = pio.sm0;
             let clock_divider = cyw43_pio::DEFAULT_CLOCK_DIVIDER;
             let irq = pio.irq0;
-            let cs = rp::gpio::Output::new(p.PIN_25, rp::gpio::Level::High);
-            let pin_dio = p.PIN_24;
-            let pin_clk = p.PIN_29;
+            let cs = rp::gpio::Output::new(pin_cs, rp::gpio::Level::High);
             let dma = rp::dma::Channel::new(p.DMA_CH0, Irqs);
             cyw43_pio::PioSpi::new(&mut pio.common, sm, clock_divider, irq, cs, pin_dio, pin_clk, dma)
         };
+        // To make flashing faster for development, you may want to flash the firmwares independently
+        // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
+        //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
+        //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
+        //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+        //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
         let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
         let clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
         let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
