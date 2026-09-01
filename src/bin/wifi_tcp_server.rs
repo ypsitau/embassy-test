@@ -38,8 +38,6 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let mut rng = rp::clocks::RoscRng;
-
     let (net_device, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
         let pin_pwr = p.PIN_23;
         let pin_dio = p.PIN_24;
@@ -71,7 +69,7 @@ async fn main(spawner: Spawner) {
         let (net_device, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
         (net_device, control, runner, clm)
     };
-    let (stack, net_runner) = {
+    let (net_stack, net_runner) = {
         let config = net::Config::dhcpv4(Default::default());
         //let config = net::Config::ipv4_static(net::StaticConfigV4 {
         //    address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 69, 2), 24),
@@ -82,6 +80,7 @@ async fn main(spawner: Spawner) {
             static STATIC_CELL: StaticCell<net::StackResources<3>> = StaticCell::new();
             STATIC_CELL.init(net::StackResources::new())
         };
+        let mut rng = rp::clocks::RoscRng;
         let seed = rng.next_u64();
         net::new(net_device, config, resources, seed)
     };
@@ -98,25 +97,28 @@ async fn main(spawner: Spawner) {
             info!("join failed: {:?}", err);
         }
         info!("waiting for link...");
-        stack.wait_link_up().await;
+        net_stack.wait_link_up().await;
         info!("waiting for DHCP...");
-        stack.wait_config_up().await;
+        net_stack.wait_config_up().await;
         // And now we can use it!
         info!("Stack is up!");
         let rx_buffer = {
-            static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
-            STATIC_CELL.init([0; 4096])
+            const SIZE: usize = 4096;
+            static STATIC_CELL: StaticCell<[u8; SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; SIZE])
         };
         let tx_buffer = {
-            static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
-            STATIC_CELL.init([0; 4096])
+            const SIZE: usize = 4096;
+            static STATIC_CELL: StaticCell<[u8; SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; SIZE])
         };
         let buf = {
-            static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
-            STATIC_CELL.init([0; 4096])
+            const SIZE: usize = 4096;
+            static STATIC_CELL: StaticCell<[u8; SIZE]> = StaticCell::new();
+            STATIC_CELL.init([0; SIZE])
         };
         loop {
-            let mut socket = net::tcp::TcpSocket::new(stack, rx_buffer, tx_buffer);
+            let mut socket = net::tcp::TcpSocket::new(net_stack, rx_buffer, tx_buffer);
             socket.set_timeout(Some(Duration::from_secs(10)));
             cyw43_control.gpio_set(0, false).await;
             info!("Listening on TCP:1234...");
@@ -128,6 +130,10 @@ async fn main(spawner: Spawner) {
             cyw43_control.gpio_set(0, true).await;
             loop {
                 let buf_read = match socket.read(buf).await {
+                    Ok(0) => {
+                        info!("connection closed");
+                        break;
+                    }
                     Ok(n) => &buf[0..n],
                     Err(e) => {
                         warn!("read error: {:?}", e);
@@ -135,13 +141,10 @@ async fn main(spawner: Spawner) {
                     }
                 };
                 info!("rxd {}", from_utf8(buf_read).unwrap());
-                match socket.write_all(buf_read).await {
-                    Ok(()) => {}
-                    Err(e) => {
-                        warn!("write error: {:?}", e);
-                        break;
-                    }
-                };
+                if let Err(e) = socket.write_all(buf_read).await {
+                    warn!("write error: {:?}", e);
+                    break;
+                }
             }
         }
     };
