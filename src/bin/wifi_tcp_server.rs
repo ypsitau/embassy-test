@@ -23,17 +23,16 @@ use embedded_io_async::Write;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+mod private_info;
+
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
     DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
 });
 
-const WIFI_NETWORK: &str = "ssid"; // change to your network SSID
-const WIFI_PASSWORD: &str = "pwd"; // change to your network password
-
 #[embassy_executor::task]
 async fn cyw43_task(
-    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>, cyw43::Cyw43439>,
+    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
 ) -> ! {
     runner.run().await
 }
@@ -50,9 +49,9 @@ async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let mut rng = RoscRng;
 
-    let fw = aligned_bytes!("../../../../cyw43-firmware/43439A0.bin");
-    let clm = aligned_bytes!("../../../../cyw43-firmware/43439A0_clm.bin");
-    let nvram = aligned_bytes!("../../../../cyw43-firmware/nvram_rp2040.bin");
+    let fw = aligned_bytes!("../../cyw43-firmware/43439A0.bin");
+    let clm = aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+    let nvram = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
 
     // To make flashing faster for development, you may want to flash the firmwares independently
     // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
@@ -73,7 +72,6 @@ async fn main(spawner: Spawner) {
         p.PIN_24,
         p.PIN_29,
         dma::Channel::new(p.DMA_CH0, Irqs),
-        dma::Channel::new(p.DMA_CH1, Irqs),
     );
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
@@ -103,7 +101,7 @@ async fn main(spawner: Spawner) {
     spawner.spawn(unwrap!(net_task(runner)));
 
     while let Err(err) = control
-        .join(WIFI_NETWORK, JoinOptions::new(WIFI_PASSWORD.as_bytes()))
+        .join(private_info::WIFI_NETWORK, JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
         .await
     {
         info!("join failed: {:?}", err);
