@@ -26,7 +26,7 @@ rp::bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let (net_device, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
+    let (net_driver, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
         let pin_pwr = p.PIN_23;
         let pin_dio = p.PIN_24;
         let pin_cs = p.PIN_25;
@@ -54,8 +54,8 @@ async fn main(_spawner: Spawner) {
         let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
         let clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
         let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
-        let (net_device, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
-        (net_device, control, runner, clm)
+        let (net_driver, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
+        (net_driver, control, runner, clm)
     };
     let (net_stack, mut net_runner) = {
         let config = net::Config::dhcpv4(Default::default());
@@ -72,7 +72,7 @@ async fn main(_spawner: Spawner) {
         };
         let mut rng = rp::clocks::RoscRng;
         let seed = rng.next_u64();
-        net::new(net_device, config, resources, seed)
+        net::new(net_driver, config, resources, seed)
     };
     let fut_cys43_runner = cyw43_runner.run();
     let fut_net_runner = net_runner.run();
