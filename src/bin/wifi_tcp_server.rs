@@ -7,32 +7,25 @@
 
 use core::str::from_utf8;
 
-use cyw43::{JoinOptions, aligned_bytes};
-use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_net::tcp::TcpSocket;
-use embassy_net::{Config, StackResources};
-use embassy_rp::clocks::RoscRng;
-use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, PIO0};
-use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::{bind_interrupts, dma};
+use embassy_net as net;
+use embassy_rp as rp;
 use embassy_time::Duration;
-use embedded_io_async::Write;
+use embedded_io_async::Write as _;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 mod private_info;
 
-bind_interrupts!(struct Irqs {
-    PIO0_IRQ_0 => InterruptHandler<PIO0>;
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+rp::bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => rp::pio::InterruptHandler<rp::peripherals::PIO0>;
+    DMA_IRQ_0 => rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>, rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
 });
 
 #[embassy_executor::task]
 async fn cyw43_task(
-    runner: cyw43::Runner<'static, cyw43::SpiBus<Output<'static>, PioSpi<'static, PIO0, 0>>>,
+    runner: cyw43::Runner<'static, cyw43::SpiBus<rp::gpio::Output<'static>, cyw43_pio::PioSpi<'static, rp::peripherals::PIO0, 0>>>,
 ) -> ! {
     runner.run().await
 }
@@ -44,48 +37,48 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    info!("Hello World!");
-
     let p = embassy_rp::init(Default::default());
-    let mut rng = RoscRng;
+    let mut rng = rp::clocks::RoscRng;
 
-    let fw = aligned_bytes!("../../cyw43-firmware/43439A0.bin");
-    let clm = aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
-    let nvram = aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
-
-    // To make flashing faster for development, you may want to flash the firmwares independently
-    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-    //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
-
-    let pwr = Output::new(p.PIN_23, Level::Low);
-    let cs = Output::new(p.PIN_25, Level::High);
-    let mut pio = Pio::new(p.PIO0, Irqs);
-    let spi = PioSpi::new(
-        &mut pio.common,
-        pio.sm0,
-        DEFAULT_CLOCK_DIVIDER,
-        pio.irq0,
-        cs,
-        p.PIN_24,
-        p.PIN_29,
-        dma::Channel::new(p.DMA_CH0, Irqs),
-    );
-
-    static STATE: StaticCell<cyw43::State> = StaticCell::new();
-    let state = STATE.init(cyw43::State::new());
-    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
-    spawner.spawn(unwrap!(cyw43_task(runner)));
-
-    control.init(clm).await;
-    control
+    let (net_device, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
+        let pin_pwr = p.PIN_23;
+        let pin_dio = p.PIN_24;
+        let pin_cs = p.PIN_25;
+        let pin_clk = p.PIN_29;
+        let state = {
+            static STATIC_CELL: StaticCell<cyw43::State> = StaticCell::new();
+            STATIC_CELL.init(cyw43::State::new())
+        };
+        let pwr = rp::gpio::Output::new(pin_pwr, rp::gpio::Level::Low);
+        let spi = {
+            let mut pio = rp::pio::Pio::new(p.PIO0, Irqs);
+            let sm = pio.sm0;
+            let clock_divider = cyw43_pio::DEFAULT_CLOCK_DIVIDER;
+            let irq = pio.irq0;
+            let cs = rp::gpio::Output::new(pin_cs, rp::gpio::Level::High);
+            let dma = rp::dma::Channel::new(p.DMA_CH0, Irqs);
+            cyw43_pio::PioSpi::new(&mut pio.common, sm, clock_divider, irq, cs, pin_dio, pin_clk, dma)
+        };
+        // To make flashing faster for development, you may want to flash the firmwares independently
+        // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
+        //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
+        //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
+        //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+        //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+        let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
+        let clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+        let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
+        let (net_device, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
+        (net_device, control, runner, clm)
+    };
+    spawner.spawn(unwrap!(cyw43_task(cyw43_runner)));
+    cyw43_control.init(cyw43_clm).await;
+    cyw43_control
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
-    let config = Config::dhcpv4(Default::default());
-    //let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+    let config = net::Config::dhcpv4(Default::default());
+    //let config = net::Config::ipv4_static(net::StaticConfigV4 {
     //    address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 69, 2), 24),
     //    dns_servers: Vec::new(),
     //    gateway: Some(Ipv4Address::new(192, 168, 69, 1)),
@@ -95,13 +88,13 @@ async fn main(spawner: Spawner) {
     let seed = rng.next_u64();
 
     // Init network stack
-    static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
-    let (stack, runner) = embassy_net::new(net_device, config, RESOURCES.init(StackResources::new()), seed);
+    static RESOURCES: StaticCell<net::StackResources<3>> = StaticCell::new();
+    let (stack, runner) = net::new(net_device, config, RESOURCES.init(net::StackResources::new()), seed);
 
     spawner.spawn(unwrap!(net_task(runner)));
 
-    while let Err(err) = control
-        .join(private_info::WIFI_NETWORK, JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
+    while let Err(err) = cyw43_control
+        .join(private_info::WIFI_NETWORK, cyw43::JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
         .await
     {
         info!("join failed: {:?}", err);
@@ -121,10 +114,10 @@ async fn main(spawner: Spawner) {
     let mut buf = [0; 4096];
 
     loop {
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+        let mut socket = net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
         socket.set_timeout(Some(Duration::from_secs(10)));
 
-        control.gpio_set(0, false).await;
+        cyw43_control.gpio_set(0, false).await;
         info!("Listening on TCP:1234...");
         if let Err(e) = socket.accept(1234).await {
             warn!("accept error: {:?}", e);
@@ -132,7 +125,7 @@ async fn main(spawner: Spawner) {
         }
 
         info!("Received connection from {:?}", socket.remote_endpoint());
-        control.gpio_set(0, true).await;
+        cyw43_control.gpio_set(0, true).await;
 
         loop {
             let n = match socket.read(&mut buf).await {
