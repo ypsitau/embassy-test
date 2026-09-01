@@ -70,12 +70,14 @@ async fn main(spawner: Spawner) {
         (net_device, control, runner, clm)
     };
     let (net_stack, net_runner) = {
-        let config = net::Config::dhcpv4(Default::default());
-        //let config = net::Config::ipv4_static(net::StaticConfigV4 {
-        //    address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 69, 2), 24),
-        //    dns_servers: Vec::new(),
-        //    gateway: Some(Ipv4Address::new(192, 168, 69, 1)),
-        //});
+        //let config = net::Config::dhcpv4(Default::default());
+        let config = {
+            let address = net::Ipv4Cidr::new(net::Ipv4Address::new(192, 168, 69, 2), 24);
+            let mut dns_servers = heapless::Vec::<net::Ipv4Address, 3>::new();
+            dns_servers.push(net::Ipv4Address::new(8, 8, 8, 8)).unwrap();
+            let gateway = Some(net::Ipv4Address::new(192, 168, 69, 1));
+            net::Config::ipv4_static(net::StaticConfigV4 {address, dns_servers, gateway})
+        };
         let resources = {
             static STATIC_CELL: StaticCell<net::StackResources<3>> = StaticCell::new();
             STATIC_CELL.init(net::StackResources::new())
