@@ -90,9 +90,7 @@ async fn main(spawner: Spawner) {
     spawner.spawn(unwrap!(net_task(net_runner)));
     let fut_main = async {
         cyw43_control.init(cyw43_clm).await;
-        cyw43_control
-            .set_power_management(cyw43::PowerManagementMode::PowerSave)
-            .await;
+        cyw43_control.set_power_management(cyw43::PowerManagementMode::PowerSave).await;
         while let Err(err) = cyw43_control
             .join(private_info::WIFI_NETWORK, cyw43::JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
             .await
@@ -105,39 +103,39 @@ async fn main(spawner: Spawner) {
         stack.wait_config_up().await;
         // And now we can use it!
         info!("Stack is up!");
-        let mut rx_buffer = [0; 4096];
-        let mut tx_buffer = [0; 4096];
-        let mut buf = [0; 4096];
+        let rx_buffer = {
+            static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
+            STATIC_CELL.init([0; 4096])
+        };
+        let tx_buffer = {
+            static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
+            STATIC_CELL.init([0; 4096])
+        };
+        let buf = {
+            static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
+            STATIC_CELL.init([0; 4096])
+        };
         loop {
-            let mut socket = net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+            let mut socket = net::tcp::TcpSocket::new(stack, rx_buffer, tx_buffer);
             socket.set_timeout(Some(Duration::from_secs(10)));
-
             cyw43_control.gpio_set(0, false).await;
             info!("Listening on TCP:1234...");
             if let Err(e) = socket.accept(1234).await {
                 warn!("accept error: {:?}", e);
                 continue;
             }
-
             info!("Received connection from {:?}", socket.remote_endpoint());
             cyw43_control.gpio_set(0, true).await;
-
             loop {
-                let n = match socket.read(&mut buf).await {
-                    Ok(0) => {
-                        warn!("read EOF");
-                        break;
-                    }
-                    Ok(n) => n,
+                let buf_read = match socket.read(buf).await {
+                    Ok(n) => &buf[0..n],
                     Err(e) => {
                         warn!("read error: {:?}", e);
                         break;
                     }
                 };
-
-                info!("rxd {}", from_utf8(&buf[..n]).unwrap());
-
-                match socket.write_all(&buf[..n]).await {
+                info!("rxd {}", from_utf8(buf_read).unwrap());
+                match socket.write_all(buf_read).await {
                     Ok(()) => {}
                     Err(e) => {
                         warn!("write error: {:?}", e);
