@@ -77,21 +77,23 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
-    let config = net::Config::dhcpv4(Default::default());
-    //let config = net::Config::ipv4_static(net::StaticConfigV4 {
-    //    address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 69, 2), 24),
-    //    dns_servers: Vec::new(),
-    //    gateway: Some(Ipv4Address::new(192, 168, 69, 1)),
-    //});
-
-    // Generate random seed
-    let seed = rng.next_u64();
-
     // Init network stack
-    static RESOURCES: StaticCell<net::StackResources<3>> = StaticCell::new();
-    let (stack, runner) = net::new(net_device, config, RESOURCES.init(net::StackResources::new()), seed);
+    let (stack, net_runner) = {
+        let config = net::Config::dhcpv4(Default::default());
+        //let config = net::Config::ipv4_static(net::StaticConfigV4 {
+        //    address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 69, 2), 24),
+        //    dns_servers: Vec::new(),
+        //    gateway: Some(Ipv4Address::new(192, 168, 69, 1)),
+        //});
+        let resources = {
+            static STATIC_CELL: StaticCell<net::StackResources<3>> = StaticCell::new();
+            STATIC_CELL.init(net::StackResources::new())
+        };
+        let seed = rng.next_u64();
+        net::new(net_device, config, resources, seed)
+    };
 
-    spawner.spawn(unwrap!(net_task(runner)));
+    spawner.spawn(unwrap!(net_task(net_runner)));
 
     while let Err(err) = cyw43_control
         .join(private_info::WIFI_NETWORK, cyw43::JoinOptions::new(private_info::WIFI_PASSWORD.as_bytes()))
