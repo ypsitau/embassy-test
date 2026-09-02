@@ -4,7 +4,6 @@
 #![no_std]
 #![no_main]
 
-use core::str::from_utf8;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net as net;
@@ -94,32 +93,38 @@ async fn main(_spawner: Spawner) {
 
 async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
     let client_state = {
-        static STATIC_CELL: StaticCell<net::tcp::client::TcpClientState<1, 4096, 4096>> = StaticCell::new();
-        STATIC_CELL.init(net::tcp::client::TcpClientState::<1, 4096, 4096>::new())
+        const N: usize = 1;
+        const TX_SZ: usize = 4096;
+        const RX_SZ: usize = 4096;
+        static STATIC_CELL: StaticCell<net::tcp::client::TcpClientState<N, TX_SZ, RX_SZ>> = StaticCell::new();
+        STATIC_CELL.init(net::tcp::client::TcpClientState::<N, TX_SZ, RX_SZ>::new())
     };
-    let tls_config = {
-        let mut rng = rp::clocks::RoscRng;
-        let seed = rng.next_u64();
-        let tls_read_buffer = {
-            static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
-            STATIC_CELL.init([0; 16640])
-        };
-        let tls_write_buffer = {
-            static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
-            STATIC_CELL.init([0; 16640])
-        };
-        reqwless::client::TlsConfig::new(seed, tls_read_buffer, tls_write_buffer, reqwless::client::TlsVerify::None)
-    };
-    let rx_buffer = {
-        static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
-        STATIC_CELL.init([0; 4096])
+    //let tls_read_buffer = {
+    //    static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
+    //    STATIC_CELL.init([0; 16640])
+    //};
+    //let tls_write_buffer = {
+    //    static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
+    //    STATIC_CELL.init([0; 16640])
+    //};
+    let buf_response = {
+        const SIZE: usize = 4096;
+        static STATIC_CELL: StaticCell<[u8; SIZE]> = StaticCell::new();
+        STATIC_CELL.init([0; SIZE])
     };
     loop {
         let tcp_client = net::tcp::client::TcpClient::new(net_stack, client_state);
-        let dns_client = net::dns::DnsSocket::new(net_stack);
-        let mut http_client = reqwless::client::HttpClient::new(&tcp_client, &dns_client);
+        let dns_socket = net::dns::DnsSocket::new(net_stack);
+        let mut http_client = reqwless::client::HttpClient::new(&tcp_client, &dns_socket);
         let url = "http://httpbin.org/json";
-        //let mut http_client = reqwless::client::HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
+        //let mut http_client = {
+        //    let tls_config = {
+        //        let mut rng = rp::clocks::RoscRng;
+        //        let seed = rng.next_u64();
+        //        reqwless::client::TlsConfig::new(seed, tls_read_buffer, tls_write_buffer, reqwless::client::TlsVerify::None)
+        //    };
+        //    reqwless::client::HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config)
+        //};
         //let url = "https://httpbin.org/json";
         info!("connecting to {}", &url);
         let mut request = match http_client.request(reqwless::request::Method::GET, url).await {
@@ -130,7 +135,7 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
                 continue;
             }
         };
-        let response = match request.send(rx_buffer).await {
+        let response = match request.send(buf_response).await {
             Ok(response) => response,
             Err(e) => {
                 error!("Failed to send HTTP request: {:?}", e);
@@ -147,16 +152,7 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
                 continue;
             }
         };
-        let body_utf8 = match from_utf8(body_bytes) {
-            Ok(body_utf8) => body_utf8,
-            Err(_e) => {
-                error!("Failed to parse response body as UTF-8");
-                Timer::after(Duration::from_secs(5)).await;
-                continue;
-            }
-        };
-        info!("Response body length: {} bytes", body_utf8.len());
-        // Parse the JSON response from httpbin.org/json
+        info!("Response body length: {} bytes", body_bytes.len());
         #[derive(serde::Deserialize)]
         struct SlideShow<'a> {
             author: &'a str,
@@ -167,7 +163,7 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
             #[serde(borrow)]
             slideshow: SlideShow<'a>,
         }
-        match serde_json_core::from_slice::<HttpBinResponse>(body_utf8.as_bytes()) {
+        match serde_json_core::from_slice::<HttpBinResponse>(body_bytes) {
             Ok((output, _used)) => {
                 info!("Successfully parsed JSON response!");
                 info!("Slideshow title: {:?}", output.slideshow.title);
@@ -175,9 +171,6 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
             }
             Err(e) => {
                 error!("Failed to parse JSON response: {}", Debug2Format(&e));
-                // Log preview of response for debugging
-                let preview = if body_utf8.len() > 200 { &body_utf8[..200] } else { body_utf8 };
-                info!("Response preview: {:?}", preview);
             }
         }
         Timer::after(Duration::from_secs(5)).await;
