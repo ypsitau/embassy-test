@@ -3,10 +3,8 @@
 
 #![no_std]
 #![no_main]
-#![allow(async_fn_in_trait)]
 
 use core::str::from_utf8;
-
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net as net;
@@ -20,7 +18,7 @@ mod private_info;
 
 rp::bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => rp::pio::InterruptHandler<rp::peripherals::PIO0>;
-    DMA_IRQ_0 => rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>, rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
+    DMA_IRQ_0 => rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>;
 });
 
 #[embassy_executor::main]
@@ -90,12 +88,12 @@ async fn main(_spawner: Spawner) {
         info!("waiting for DHCP...");
         net_stack.wait_config_up().await;
         info!("Stack is up!");
-        main_loop(net_stack).await;
+        run_echo(net_stack).await;
     };
     embassy_futures::join::join3(fut_main, fut_cys43_runner, fut_net_runner).await;
 }
 
-async fn main_loop(net_stack: net::Stack<'_>) -> ! {
+async fn run_echo(net_stack: net::Stack<'_>) -> ! {
     let rx_buffer = {
         const SIZE: usize = 4096;
         static STATIC_CELL: StaticCell<[u8; SIZE]> = StaticCell::new();
