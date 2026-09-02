@@ -11,21 +11,22 @@ use embassy_time::Timer;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-static CHANNEL: sync::channel::Channel<sync::blocking_mutex::raw::CriticalSectionRawMutex, LedState, 1> = sync::channel::Channel::new();
-
 enum LedState {
     On,
     Off,
 }
 
+static CHANNEL: sync::channel::Channel<sync::blocking_mutex::raw::CriticalSectionRawMutex, LedState, 1> = sync::channel::Channel::new();
+
 #[cortex_m_rt::entry]
 fn main() -> ! {
     let p = rp::init(Default::default());
     let gpio_led = rp::gpio::Output::new(p.PIN_25, rp::gpio::Level::Low);
-    static mut CORE1_STACK: rp::multicore::Stack<4096> = rp::multicore::Stack::new();
-    rp::multicore::spawn_core1(
-        p.CORE1,
-        unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
+    let stack_core1 = {
+        static STATIC_CELL: StaticCell<rp::multicore::Stack<4096>> = StaticCell::new();
+        STATIC_CELL.init(rp::multicore::Stack::new())
+    };
+    rp::multicore::spawn_core1(p.CORE1, stack_core1,
         move || {
             static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
             let executor1 = EXECUTOR1.init(Executor::new());
