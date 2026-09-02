@@ -110,70 +110,64 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
         };
         reqwless::client::TlsConfig::new(seed, tls_read_buffer, tls_write_buffer, reqwless::client::TlsVerify::None)
     };
+    let rx_buffer = {
+        static STATIC_CELL: StaticCell<[u8; 4096]> = StaticCell::new();
+        STATIC_CELL.init([0; 4096])
+    };
     loop {
-        let mut rx_buffer = [0; 4096];
         let tcp_client = net::tcp::client::TcpClient::new(net_stack, client_state);
         let dns_client = net::dns::DnsSocket::new(net_stack);
         let mut http_client = reqwless::client::HttpClient::new(&tcp_client, &dns_client);
         let url = "http://httpbin.org/json";
         //let mut http_client = reqwless::client::HttpClient::new_with_tls(&tcp_client, &dns_client, tls_config);
         //let url = "https://httpbin.org/json";
-
         info!("connecting to {}", &url);
-
         let mut request = match http_client.request(reqwless::request::Method::GET, url).await {
-            Ok(req) => req,
+            Ok(request) => request,
             Err(e) => {
                 error!("Failed to make HTTP request: {:?}", e);
                 Timer::after(Duration::from_secs(5)).await;
                 continue;
             }
         };
-
-        let response = match request.send(&mut rx_buffer).await {
-            Ok(resp) => resp,
+        let response = match request.send(rx_buffer).await {
+            Ok(response) => response,
             Err(e) => {
                 error!("Failed to send HTTP request: {:?}", e);
                 Timer::after(Duration::from_secs(5)).await;
                 continue;
             }
         };
-
         info!("Response status: {}", response.status.0);
-
         let body_bytes = match response.body().read_to_end().await {
-            Ok(b) => b,
+            Ok(body_bytes) => body_bytes,
             Err(_e) => {
                 error!("Failed to read response body");
                 Timer::after(Duration::from_secs(5)).await;
                 continue;
             }
         };
-
-        let body = match from_utf8(body_bytes) {
-            Ok(b) => b,
+        let body_utf8 = match from_utf8(body_bytes) {
+            Ok(body_utf8) => body_utf8,
             Err(_e) => {
                 error!("Failed to parse response body as UTF-8");
                 Timer::after(Duration::from_secs(5)).await;
                 continue;
             }
         };
-        info!("Response body length: {} bytes", body.len());
-
+        info!("Response body length: {} bytes", body_utf8.len());
         // Parse the JSON response from httpbin.org/json
         #[derive(serde::Deserialize)]
         struct SlideShow<'a> {
             author: &'a str,
             title: &'a str,
         }
-
         #[derive(serde::Deserialize)]
         struct HttpBinResponse<'a> {
             #[serde(borrow)]
             slideshow: SlideShow<'a>,
         }
-
-        match serde_json_core::from_slice::<HttpBinResponse>(body.as_bytes()) {
+        match serde_json_core::from_slice::<HttpBinResponse>(body_utf8.as_bytes()) {
             Ok((output, _used)) => {
                 info!("Successfully parsed JSON response!");
                 info!("Slideshow title: {:?}", output.slideshow.title);
@@ -182,11 +176,10 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
             Err(e) => {
                 error!("Failed to parse JSON response: {}", Debug2Format(&e));
                 // Log preview of response for debugging
-                let preview = if body.len() > 200 { &body[..200] } else { body };
+                let preview = if body_utf8.len() > 200 { &body_utf8[..200] } else { body_utf8 };
                 info!("Response preview: {:?}", preview);
             }
         }
-
         Timer::after(Duration::from_secs(5)).await;
     }
 }
