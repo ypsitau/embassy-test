@@ -31,23 +31,22 @@ async fn main(spawner: Spawner) {
     // we perform the split, see further below for the definition of the resources struct
     let r = split_resources!(p);
     // and then we can use them
-    spawner.spawn(task_macro_assigned(spawner, r.leds).unwrap());
+    spawner.spawn(task_macro_assigned(spawner, r.led_resources).unwrap());
 }
 
 // 1) Assigning a resource to a task by passing parts of the peripherals.
 #[embassy_executor::task]
-async fn task_manually_assigned(
-    _spawner: Spawner,
+async fn task_manually_assigned(_spawner: Spawner,
     pin_20: rp::Peri<'static, rp::peripherals::PIN_20>,
     pin_21: rp::Peri<'static, rp::peripherals::PIN_21>,
 ) {
-    let mut led_20 = rp::gpio::Output::new(pin_20, rp::gpio::Level::Low);
-    let mut led_21 = rp::gpio::Output::new(pin_21, rp::gpio::Level::High);
+    let mut gpio_20 = rp::gpio::Output::new(pin_20, rp::gpio::Level::Low);
+    let mut gpio_21 = rp::gpio::Output::new(pin_21, rp::gpio::Level::High);
 
     loop {
         info!("toggling leds");
-        led_20.toggle();
-        led_21.toggle();
+        gpio_20.toggle();
+        gpio_21.toggle();
         Timer::after_secs(1).await;
     }
 }
@@ -57,9 +56,9 @@ async fn task_manually_assigned(
 // basically this will split up the peripherals struct into smaller structs, that we define here
 // naming is up to you, make sure your future self understands what you did here
 assign_resources! {
-    leds: Leds{
-        led_10: PIN_10,
-        led_11: PIN_11,
+    led_resources: LedResources{
+        pin_10: PIN_10,
+        pin_11: PIN_11,
     }
     // add more resources to more structs if needed, for example defining one struct for each task
 }
@@ -68,14 +67,14 @@ assign_resources! {
 
 // 2) Using the split resources in a task
 #[embassy_executor::task]
-async fn task_macro_assigned(_spawner: Spawner, r: Leds) {
-    let mut led_10 = rp::gpio::Output::new(r.led_10, rp::gpio::Level::Low);
-    let mut led_11 = rp::gpio::Output::new(r.led_11, rp::gpio::Level::High);
+async fn task_macro_assigned(_spawner: Spawner, r: LedResources) {
+    let mut gpio_10 = rp::gpio::Output::new(r.pin_10, rp::gpio::Level::Low);
+    let mut gpio_11 = rp::gpio::Output::new(r.pin_11, rp::gpio::Level::High);
 
     loop {
         info!("toggling leds");
-        led_10.toggle();
-        led_11.toggle();
+        gpio_10.toggle();
+        gpio_11.toggle();
         Timer::after_secs(1).await;
     }
 }
