@@ -2,7 +2,6 @@
 #![no_main]
 
 use core::fmt::Write;
-use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;   // impl embedded_hal::i2c::I2c
 use embassy_executor::Spawner;
 use embassy_rp as rp;
 use embassy_time::Timer;
@@ -48,7 +47,9 @@ async fn main(_spawner: Spawner) {
         STATIC_CELL.init(MutexI2C0::new(rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)))
     };
     let mut display = {
-        let interface = ssd1306::I2CDisplayInterface::new(I2cDevice::new(mutex_i2c0));
+        // impl embedded_hal::i2c::I2c
+        let i2c_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c0);
+        let interface = ssd1306::I2CDisplayInterface::new(i2c_device);
         ssd1306::Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode()
     };
