@@ -33,6 +33,7 @@ async fn main(spawner: Spawner) {
 
 #[embassy_executor::task]
 async fn task_a(mutex_i2c1: &'static MutexI2C1) {
+    // impl embedded_hal_async::i2c::I2c
     let i2c_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c1);
     let _sensor = DummyDeviceDriver::new(i2c_device, 0xc0);
     loop {
@@ -43,6 +44,7 @@ async fn task_a(mutex_i2c1: &'static MutexI2C1) {
 
 #[embassy_executor::task]
 async fn task_b(mutex_i2c1: &'static MutexI2C1) {
+    // impl embedded_hal_async::i2c::I2c
     let i2c_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c1);
     let _sensor = DummyDeviceDriver::new(i2c_device, 0xde);
     loop {

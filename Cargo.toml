@@ -73,7 +73,7 @@ embassy-net = { version = "0.9.1", features = [
 serde = { version = "1.0.229", default-features = false, features = ["derive"] }
 serde-json-core = "0.5.1"
 assign-resources = "0.5.0"
-pwm-pca9685 = "1.0.0"
+pwm-pca9685 = { version = "1.0.0", features = ["async"] }
 
 [target.'cfg( target_arch = "arm" )'.dependencies]
 panic-probe = { version = "1", features = ["print-defmt"] }
