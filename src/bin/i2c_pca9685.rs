@@ -36,13 +36,12 @@ async fn pwm_task(i2c_device: impl embedded_hal_async::i2c::I2c) {
     use pwm_pca9685::Channel;
     let mut pwm = {
         let address = pwm_pca9685::Address::default();
-        let mut pwm = pwm_pca9685::Pca9685::new(i2c_device, address).unwrap();
-        // This corresponds to a frequency of 60 Hz.
-        pwm.set_prescale(100).await.unwrap();
-        // It is necessary to enable the device.
-        pwm.enable().await.unwrap();
-        pwm
+        pwm_pca9685::Pca9685::new(i2c_device, address).unwrap()
     };
+    // This corresponds to a frequency of 60 Hz.
+    pwm.set_prescale(100).await.unwrap();
+    // It is necessary to enable the device.
+    pwm.enable().await.unwrap();
     // Turn on channel 0 at 0x000.
     pwm.set_channel_on(Channel::C0, 0x000).await.unwrap();
     // Turn off channel 0 at 0x7ff, which is 50% in the range `[0x000..=0xfff]`.
