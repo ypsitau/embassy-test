@@ -51,7 +51,7 @@ ufmt = "0.2.0"
 embedded-hal-nb = "1.0.0"
 rtt-target = "0.6.2"
 embedded-sdmmc = "0.10.0"
-embedded-hal-bus = "0.3.0"
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
 smart-leds = "0.4.0"
 fixed-macro = "1.2.0"
 critical-section = "1.2.0"
