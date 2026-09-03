@@ -94,14 +94,6 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         (x, y)
     }
     pub fn read_pos_raw(&mut self) -> Option<(u16, u16)> {
-        let (xraw, yraw) = self.read_pos_adc()?;
-        if self.rotate90 {
-            Some((yraw, xraw))
-        } else {
-            Some((xraw, yraw))
-        }
-    }
-    pub fn read_pos_adc(&mut self) -> Option<(u16, u16)> {
         let mut xbytes = [0u8; 2];
         let mut ybytes = [0u8; 2];
         let mut zbytes = [0u8; 1];
@@ -118,6 +110,8 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         let yraw = (((ybytes[0] as u16) << 4) | (ybytes[1] as u16 >> 4)) as u16;
         if zbytes[0] < 3 {
             None
+        } else if self.rotate90 {
+            Some((yraw, xraw))
         } else {
             Some((xraw, yraw))
         }
@@ -143,7 +137,7 @@ pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
         ptraws.push(read_pos_raw_for_calibration(touch, &mut delay).await).ok();
     }
     display.clear(color_bg).ok();
-    while let Some(_) = touch.read_pos_adc() {
+    while let Some(_) = touch.read_pos_raw() {
         delay.delay_ms(100).await;
     }
     let (xraw1, yraw1) = ptraws[0];
