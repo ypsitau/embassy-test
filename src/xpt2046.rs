@@ -6,10 +6,16 @@ use embedded_graphics::draw_target::DrawTarget;
 
 #[derive(Debug, Clone, Copy, defmt::Format)]
 pub struct Calibration {
-    xraw_right: i32,
-    xraw_left: i32,
-    yraw_top: i32,
-    yraw_bottom: i32,
+    pub xraw_right: i32,
+    pub xraw_left: i32,
+    pub yraw_top: i32,
+    pub yraw_bottom: i32,
+}
+
+impl Calibration {
+    pub fn new(xraw_right: i32, xraw_left: i32, yraw_top: i32, yraw_bottom: i32) -> Self {
+        Self { xraw_right, xraw_left, yraw_top, yraw_bottom }
+    }
 }
 
 impl Default for Calibration {
@@ -65,7 +71,7 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         let mut xraw_sorted = [0u16; NUM_SAMPLES];
         let mut yraw_sorted = [0u16; NUM_SAMPLES];
         loop {
-            if let Some((xraw, yraw)) = self.read_pos_raw() {
+            if let Some((xraw, yraw)) = self.read_pos_raw().await {
                 xraw_hist.write(xraw);
                 yraw_hist.write(yraw);
                 if xraw_hist.is_full() {
@@ -93,7 +99,7 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
         let y = (((yraw as i32) - c.yraw_top) * self.y_range / (c.yraw_bottom - c.yraw_top)).clamp(0, self.y_range);
         (x, y)
     }
-    pub fn read_pos_raw(&mut self) -> Option<(u16, u16)> {
+    pub async fn read_pos_raw(&mut self) -> Option<(u16, u16)> {
         let mut xbytes = [0u8; 2];
         let mut ybytes = [0u8; 2];
         let mut zbytes = [0u8; 1];
@@ -137,7 +143,7 @@ pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
         ptraws.push(read_pos_raw_for_calibration(touch, &mut delay).await).ok();
     }
     display.clear(color_bg).ok();
-    while let Some(_) = touch.read_pos_raw() {
+    while let Some(_) = touch.read_pos_raw().await {
         delay.delay_ms(100).await;
     }
     let (xraw1, yraw1) = ptraws[0];
@@ -172,7 +178,7 @@ async fn read_pos_raw_for_calibration(touch: &mut Driver<impl hal::spi::SpiDevic
     let mut xraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
     let mut yraws = heapless::Vec::<u16, NUM_SAMPLES>::new();
     loop {
-        if let Some((xraw, yraw)) = touch.read_pos_raw() {
+        if let Some((xraw, yraw)) = touch.read_pos_raw().await {
             xraws.push(xraw).unwrap();
             yraws.push(yraw).unwrap();
             if xraws.is_full() { break; }

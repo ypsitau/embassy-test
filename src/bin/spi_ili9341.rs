@@ -90,9 +90,11 @@ async fn main(_spawner: embassy_executor::Spawner) {
     };
     if let Some(calibration) = xpt2046::calibrate(&mut touch, &mut display, &mut embassy_time::Delay,
             eg::pixelcolor::Rgb565::GREEN, eg::pixelcolor::Rgb565::BLACK).await {
-        defmt::info!("Calibration: {:?}", calibration);
+        defmt::info!("touch.calibration = xpt2046::Calibration::new({}, {}, {}, {});",
+            calibration.xraw_right, calibration.xraw_left, calibration.yraw_top, calibration.yraw_bottom);
         touch.calibration = calibration;
     }
+    //touch.calibration = xpt2046::Calibration::new(1887, 202, 132, 1853);
     display.clear(eg::pixelcolor::Rgb565::BLACK).unwrap();
     eg::image::Image::new(
         &eg::image::ImageRawLE::new(include_bytes!("../../assets/ferris.raw"), 86),
