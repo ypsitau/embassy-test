@@ -58,7 +58,7 @@ impl<SpiDevice: hal::spi::SpiDevice> Builder<SpiDevice> {
 }
 
 impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
-    pub async fn run(&mut self, mut delay: impl hal_async::delay::DelayNs, sampling_delay: u32, mut on_pos_updated: impl FnMut(Option<(i32, i32)>)) {
+    pub async fn run_sampler(&mut self, mut delay: impl hal_async::delay::DelayNs, sampling_delay: u32, mut on_pos_updated: impl FnMut(Option<(i32, i32)>)) {
         const NUM_SAMPLES: usize = 6;
         let mut xraw_hist = heapless::HistoryBuf::<u16, NUM_SAMPLES>::new();
         let mut yraw_hist = heapless::HistoryBuf::<u16, NUM_SAMPLES>::new();

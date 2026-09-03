@@ -124,7 +124,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             time::Timer::after_millis(30).await;
         }
     };
-    let fut_touch = touch.run(embassy_time::Delay, 5, |pos| {
+    let fut_touch = touch.run_sampler(embassy_time::Delay, 5, |pos| {
         mutex_pos.lock(|p| { *p.borrow_mut() = pos; });
     });
     futures::join::join(fut_main, fut_touch).await;
