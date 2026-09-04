@@ -28,11 +28,11 @@ async fn main(_spawner: Spawner) {
     };
     // impl embedded_hal_async::i2c::I2c
     let i2c_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c1);
-    let fut_pwm_task = pwm_task(i2c_device);
+    let fut_pwm_task = task_pwm(i2c_device);
     fut_pwm_task.await;
 }
 
-async fn pwm_task(i2c_device: impl embedded_hal_async::i2c::I2c) {
+async fn task_pwm(i2c_device: impl embedded_hal_async::i2c::I2c) {
     use pwm_pca9685::Channel;
     let mut pwm = {
         let address = pwm_pca9685::Address::default();

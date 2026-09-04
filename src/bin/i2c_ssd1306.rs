@@ -46,9 +46,14 @@ async fn main(_spawner: Spawner) {
         static STATIC_CELL: StaticCell<MutexI2C0> = StaticCell::new();
         STATIC_CELL.init(MutexI2C0::new(rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)))
     };
+    // impl embedded_hal_async::i2c::I2c
+    let i2c_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c0);
+    let fut_task_display = task_display(i2c_device);
+    fut_task_display.await;
+}
+
+async fn task_display(i2c_device: impl embedded_hal_async::i2c::I2c) {
     let mut display = {
-        // impl embedded_hal_async::i2c::I2c
-        let i2c_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c0);
         let interface = ssd1306::I2CDisplayInterface::new(i2c_device);
         ssd1306::Ssd1306Async::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
             .into_buffered_graphics_mode()
