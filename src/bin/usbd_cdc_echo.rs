@@ -30,12 +30,12 @@ async fn main(_spawner: Spawner) {
         const BOS_DESCRIPTOR_SIZE: usize = 256;
         const MSOS_DESCRIPTOR_SIZE: usize = 256;
         const CONTROL_BUF_SIZE: usize = 64;
-        let mut config = usb::Config::new(VID, PID);
-        config.manufacturer = Some("Embassy");
-        config.product = Some("usbd_cdc_echo");
-        config.serial_number = Some("12345678");
-        config.max_power = 100;
-        config.max_packet_size_0 = CONTROL_BUF_SIZE as u8;
+        let mut usb_config = usb::Config::new(VID, PID);
+        usb_config.manufacturer = Some("Embassy");
+        usb_config.product = Some("usbd_cdc_echo");
+        usb_config.serial_number = Some("12345678");
+        usb_config.max_power = 100;
+        usb_config.max_packet_size_0 = CONTROL_BUF_SIZE as u8;
         let config_descriptor_buf = { // should be replaced by make_static macro when it becomes available
             static STATIC_CELL: StaticCell<[u8; CONFIG_DESCRIPTOR_SIZE]> = StaticCell::new();
             STATIC_CELL.init([0; CONFIG_DESCRIPTOR_SIZE])
@@ -56,7 +56,7 @@ async fn main(_spawner: Spawner) {
             static STATIC_CELL: StaticCell<DeviceHandler> = StaticCell::new();
             STATIC_CELL.init(DeviceHandler::new())
         };
-        let mut usb_builder = usb::Builder::new(usb_driver, config,
+        let mut usb_builder = usb::Builder::new(usb_driver, usb_config,
             config_descriptor_buf, bos_descriptor_buf, msos_descriptor_buf, control_buf);
         usb_builder.handler(device_handler);
         usb_builder
