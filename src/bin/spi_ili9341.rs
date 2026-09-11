@@ -2,6 +2,7 @@
 #![no_main]
 
 use core::cell::RefCell;
+use defmt::info;
 use embassy_time as time;
 use embassy_futures as futures;
 use embassy_embedded_hal as hal;
@@ -25,72 +26,75 @@ use embassy_test::xpt2046;
 //    embassy_sync::blocking_mutex::raw::NoopRawMutex,
 //    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
 
-type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
-    embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
-
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
-    let p = rp::init(Default::default());
-    let mutex_spi = {
-        let clk = p.PIN_10;
-        let mosi = p.PIN_11;
-        let miso = p.PIN_12;
-        let config = rp::spi::Config::default();
-        //let tx_dma = p.DMA_CH0;
-        //let rx_dma = p.DMA_CH1;
-        //let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
-        let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
-        MutexSPI1::new(RefCell::new(spi))
-    };
-    let mut touch = {
-        let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
-        let _pin_touch_irq  = p.PIN_15;
-        let spi_device = {
+    let (spi_device_touch, display_interface, gpio_display_rst) = {
+        let p = rp::init(Default::default());
+        let mutex_spi = {
+            type MutexSPI1 = embassy_sync::blocking_mutex::Mutex<
+                embassy_sync::blocking_mutex::raw::NoopRawMutex,
+                RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
+            let clk = p.PIN_10;
+            let mosi = p.PIN_11;
+            let miso = p.PIN_12;
+            let config = rp::spi::Config::default();
+            //let tx_dma = p.DMA_CH0;
+            //let rx_dma = p.DMA_CH1;
+            //let spi = rp::spi::Spi::new(p.SPI1, clk, mosi, miso, tx_dma, rx_dma, Irqs, config);
+            let spi = rp::spi::Spi::new_blocking(p.SPI1, clk, mosi, miso, config);
+            static STATIC_CELL: StaticCell<MutexSPI1> = StaticCell::new();
+            STATIC_CELL.init(MutexSPI1::new(RefCell::new(spi)))
+        };
+        let spi_device_touch = {
+            let gpio_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
+            let _pin_touch_irq  = p.PIN_15;
             let mut config = rp::spi::Config::default();
             config.frequency = 200_000;
             config.phase = rp::spi::Phase::CaptureOnSecondTransition;
             config.polarity = rp::spi::Polarity::IdleHigh;
-            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
+            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(mutex_spi, gpio_cs, config)
         };
-        xpt2046::Builder::new(spi_device, 240, 320)
-            .calibration(xpt2046::Calibration::default())
-            .rotate90(true)
-            .build()
+        let gpio_display_rst = rp::gpio::Output::new(p.PIN_6, rp::gpio::Level::Low);
+        let display_interface = {
+            let gpio_dc = rp::gpio::Output::new(p.PIN_7, rp::gpio::Level::Low);
+            let gpio_cs = rp::gpio::Output::new(p.PIN_8, rp::gpio::Level::High);
+            let _gpio_bl = {
+                static STATIC_CELL: StaticCell<rp::gpio::Output<'static>> = StaticCell::new();
+                STATIC_CELL.init(rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High));
+            };
+            let spi_device_display = {
+                let mut config = rp::spi::Config::default();
+                config.frequency = 64_000_000;
+                config.phase = rp::spi::Phase::CaptureOnSecondTransition;
+                config.polarity = rp::spi::Polarity::IdleHigh;
+                hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(mutex_spi, gpio_cs, config)
+            };
+            let spi_buf = {
+                const SPI_BUF_SIZE: usize = 320;
+                static STATIC_CELL: StaticCell<[u8; SPI_BUF_SIZE]> = StaticCell::new();
+                STATIC_CELL.init([0u8; SPI_BUF_SIZE])
+            };
+            mipidsi::interface::SpiInterface::new(spi_device_display, gpio_dc, spi_buf)
+        };
+        (spi_device_touch, display_interface, gpio_display_rst)
     };
+    let mut touch = xpt2046::Builder::new(spi_device_touch, 240, 320)
+        .calibration(xpt2046::Calibration::default())
+        .rotate90(true)
+        .build();
     let mut display = {
         use mipidsi::options::{Orientation, Rotation, ColorOrder};
-        let gpio_rst = rp::gpio::Output::new(p.PIN_6, rp::gpio::Level::Low);
-        let gpio_dc = rp::gpio::Output::new(p.PIN_7, rp::gpio::Level::Low);
-        let gpio_cs = rp::gpio::Output::new(p.PIN_8, rp::gpio::Level::High);
-        let _gpio_bl = {
-            static STATIC_CELL: StaticCell<rp::gpio::Output<'static>> = StaticCell::new();
-            STATIC_CELL.init(rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High));
-        };
-        let spi_device = {
-            let mut config = rp::spi::Config::default();
-            config.frequency = 64_000_000;
-            config.phase = rp::spi::Phase::CaptureOnSecondTransition;
-            config.polarity = rp::spi::Polarity::IdleHigh;
-            hal::shared_bus::blocking::spi::SpiDeviceWithConfig::new(&mutex_spi, gpio_cs, config)
-        };
-        let spi_buf = {
-            const SPI_BUF_SIZE: usize = 320;
-            static STATIC_CELL: StaticCell<[u8; SPI_BUF_SIZE]> = StaticCell::new();
-            STATIC_CELL.init([0u8; SPI_BUF_SIZE])
-        };
-        let display_interface = mipidsi::interface::SpiInterface::new(spi_device, gpio_dc, spi_buf);
         mipidsi::Builder::new(DisplayModel, display_interface)
             .display_size(240, 320)
             .color_order(ColorOrder::Bgr)
-            .reset_pin(gpio_rst)
+            .reset_pin(gpio_display_rst)
             .orientation(Orientation::new().rotate(Rotation::Deg90).flip_horizontal())
             .init(&mut embassy_time::Delay)
             .unwrap()
     };
     if let Some(calibration) = xpt2046::calibrate(&mut touch, &mut display, &mut embassy_time::Delay,
             eg::pixelcolor::Rgb565::GREEN, eg::pixelcolor::Rgb565::BLACK).await {
-        defmt::info!("touch.calibration = xpt2046::Calibration::new({}, {}, {}, {});",
+        info!("touch.calibration = xpt2046::Calibration::new({}, {}, {}, {});",
             calibration.xraw_right, calibration.xraw_left, calibration.yraw_top, calibration.yraw_bottom);
         touch.calibration = calibration;
     }
