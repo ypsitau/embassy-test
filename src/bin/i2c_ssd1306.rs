@@ -36,19 +36,20 @@ rp::bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let p = rp::init(Default::default());
-    let mutex_i2c0 = {
-        let sda = p.PIN_16;
-        let scl = p.PIN_17;
-        let mut config = rp::i2c::Config::default();
-        config.frequency = 400_000;
-        // should be replaced by make_static macro when it becomes available
-        static STATIC_CELL: StaticCell<MutexI2C0> = StaticCell::new();
-        STATIC_CELL.init(MutexI2C0::new(rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)))
+    let (i2c0_device,) = {
+        let p = rp::init(Default::default());
+        let mutex_i2c0 = {
+            let sda = p.PIN_16;
+            let scl = p.PIN_17;
+            let mut config = rp::i2c::Config::default();
+            config.frequency = 400_000;
+            static STATIC_CELL: StaticCell<MutexI2C0> = StaticCell::new();
+            STATIC_CELL.init(MutexI2C0::new(rp::i2c::I2c::new_async(p.I2C0, scl, sda, Irqs, config)))
+        };
+        let i2c0_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c0);
+        (i2c0_device,)
     };
-    // impl embedded_hal_async::i2c::I2c
-    let i2c_device = embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice::new(mutex_i2c0);
-    let fut_task_display = task_display(i2c_device);
+    let fut_task_display = task_display(i2c0_device);
     fut_task_display.await;
 }
 
