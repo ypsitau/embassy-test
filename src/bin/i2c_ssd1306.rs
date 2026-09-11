@@ -26,10 +26,6 @@ impl Direction {
     }
 }
 
-type MutexI2C0 = embassy_sync::mutex::Mutex<
-    embassy_sync::blocking_mutex::raw::NoopRawMutex,
-    rp::i2c::I2c<'static, rp::peripherals::I2C0, rp::i2c::Async>>;
-
 rp::bind_interrupts!(struct Irqs {
     I2C0_IRQ => rp::i2c::InterruptHandler<rp::peripherals::I2C0>;
 });
@@ -37,6 +33,9 @@ rp::bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let (i2c0_device,) = {
+        type MutexI2C0 = embassy_sync::mutex::Mutex<
+            embassy_sync::blocking_mutex::raw::NoopRawMutex,
+            rp::i2c::I2c<'static, rp::peripherals::I2C0, rp::i2c::Async>>;
         let p = rp::init(Default::default());
         let mutex_i2c0 = {
             let sda = p.PIN_16;
