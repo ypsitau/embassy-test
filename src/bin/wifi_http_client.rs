@@ -23,6 +23,7 @@ rp::bind_interrupts!(struct Irqs {
 async fn main(_spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
     let (net_driver, mut cyw43_control, cyw43_runner, cyw43_clm) =  {
+        const PRE_DOWNLOAD_FIRMWARE: bool = true;
         let pin_pwr = p.PIN_23;
         let pin_dio = p.PIN_24;
         let pin_cs = p.PIN_25;
@@ -41,17 +42,27 @@ async fn main(_spawner: Spawner) {
             let dma = rp::dma::Channel::new(p.DMA_CH0, Irqs);
             cyw43_pio::PioSpi::new(&mut pio.common, sm, clock_divider, irq, cs, pin_dio, pin_clk, dma)
         };
-        // To make flashing faster for development, you may want to flash the firmwares independently
-        // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-        //     probe-rs download 43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-        //     probe-rs download 43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-        //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-        //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
-        let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
-        let clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+        let (fw, cyw43_clm) = if PRE_DOWNLOAD_FIRMWARE {
+            // Use pre-downloaded firmware
+            // $ probe-rs download cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10180000
+            // $ probe-rs download cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x101c0000
+            let fw = unsafe {
+                &*(core::ptr::slice_from_raw_parts(0x10180000 as *const u8, 231077)
+                    as *const cyw43::Aligned<cyw43::A4, [u8]>)
+            };
+            let cyw43_clm = unsafe {
+                &*(core::ptr::slice_from_raw_parts(0x101c0000 as *const u8, 984)
+                    as *const cyw43::Aligned<cyw43::A4, [u8]>)
+            };
+            (fw, cyw43_clm)
+        } else {
+            let fw = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0.bin");
+            let cyw43_clm = cyw43::aligned_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+            (fw, cyw43_clm)
+        };
         let nvram = cyw43::aligned_bytes!("../../cyw43-firmware/nvram_rp2040.bin");
-        let (net_driver, control, runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
-        (net_driver, control, runner, clm)
+        let (net_driver, cyw43_control, cyw43_runner) = cyw43::new(state, pwr, spi, fw, nvram).await;
+        (net_driver, cyw43_control, cyw43_runner, cyw43_clm)
     };
     let (net_stack, mut net_runner) = {
         let config = net::Config::dhcpv4(Default::default());
@@ -68,7 +79,8 @@ async fn main(_spawner: Spawner) {
         };
         let mut rng = rp::clocks::RoscRng;
         let seed = rng.next_u64();
-        net::new(net_driver, config, resources, seed)
+        let (net_stack, net_runner) = net::new(net_driver, config, resources, seed);
+        (net_stack, net_runner)
     };
     let fut_cys43_runner = cyw43_runner.run();
     let fut_net_runner = net_runner.run();
@@ -92,6 +104,7 @@ async fn main(_spawner: Spawner) {
 }
 
 async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
+    const USE_TLS: bool = false;
     let client_state = {
         const N: usize = 1;
         const TX_SZ: usize = 4096;
@@ -99,14 +112,6 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
         static STATIC_CELL: StaticCell<net::tcp::client::TcpClientState<N, TX_SZ, RX_SZ>> = StaticCell::new();
         STATIC_CELL.init(net::tcp::client::TcpClientState::<N, TX_SZ, RX_SZ>::new())
     };
-    //let tls_read_buffer = {
-    //    static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
-    //    STATIC_CELL.init([0; 16640])
-    //};
-    //let tls_write_buffer = {
-    //    static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
-    //    STATIC_CELL.init([0; 16640])
-    //};
     let buf_response = {
         const SIZE: usize = 4096;
         static STATIC_CELL: StaticCell<[u8; SIZE]> = StaticCell::new();
@@ -115,17 +120,28 @@ async fn run_http_client(net_stack: net::Stack<'_>) -> ! {
     loop {
         let tcp_client = net::tcp::client::TcpClient::new(net_stack, client_state);
         let dns_socket = net::dns::DnsSocket::new(net_stack);
-        let mut http_client = reqwless::client::HttpClient::new(&tcp_client, &dns_socket);
-        let url = "http://httpbin.org/json";
-        //let mut http_client = {
-        //    let tls_config = {
-        //        let mut rng = rp::clocks::RoscRng;
-        //        let seed = rng.next_u64();
-        //        reqwless::client::TlsConfig::new(seed, tls_read_buffer, tls_write_buffer, reqwless::client::TlsVerify::None)
-        //    };
-        //    reqwless::client::HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config)
-        //};
-        //let url = "https://httpbin.org/json";
+        let (mut http_client, url) = if USE_TLS {
+            let tls_read_buffer = {
+                static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
+                STATIC_CELL.init([0u8; 16640])
+            };
+            let tls_write_buffer = {
+                static STATIC_CELL: StaticCell<[u8; 16640]> = StaticCell::new();
+                STATIC_CELL.init([0u8; 16640])
+            };
+            let tls_config = {
+                let mut rng = rp::clocks::RoscRng;
+                let seed = rng.next_u64();
+                reqwless::client::TlsConfig::new(seed, tls_read_buffer, tls_write_buffer, reqwless::client::TlsVerify::None)
+            };
+            let http_client = reqwless::client::HttpClient::new_with_tls(&tcp_client, &dns_socket, tls_config);
+            let url = "https://httpbin.org/json";
+            (http_client, url)
+        } else {
+            let http_client = reqwless::client::HttpClient::new(&tcp_client, &dns_socket);
+            let url = "http://httpbin.org/json";
+            (http_client, url)
+        };
         info!("connecting to {}", &url);
         let mut request = match http_client.request(reqwless::request::Method::GET, url).await {
             Ok(request) => request,
