@@ -29,6 +29,8 @@ esp-rtos = { version = "0.3.0", features = ["embassy", "log-04", "esp32"] }
 critical-section = "1.2.0"
 panic-halt = "1.0.0"
 embassy-futures = "0.1.2"
+embedded-hal-1 = { package = "embedded-hal", version = "1.0.0" }
+embedded-hal-async = { version = "1.0.0" }
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]
