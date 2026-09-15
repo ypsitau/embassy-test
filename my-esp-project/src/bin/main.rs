@@ -17,11 +17,15 @@ async fn main(_spawner: Spawner) {
         let p = esp_hal::init(esp_hal::Config::default());
         esp_println::logger::init_logger_from_env();
         let timg0 = esp::timer::timg::TimerGroup::new(p.TIMG0);
-        let software_interrupt = esp::interrupt::software::SoftwareInterruptControl::new(p.SW_INTERRUPT);
-        esp_rtos::start(timg0.timer0, software_interrupt.software_interrupt0);
-        let pin_sw = esp::gpio::Input::new(p.GPIO0,
-            esp::gpio::InputConfig::default().with_pull(esp::gpio::Pull::Up));
-        let pin_led = esp::gpio::Output::new(p.GPIO4, esp::gpio::Level::Low, esp::gpio::OutputConfig::default());
+        let software_interrupt_control = esp::interrupt::software::SoftwareInterruptControl::new(p.SW_INTERRUPT);
+        esp_rtos::start(timg0.timer0, software_interrupt_control.software_interrupt0);
+        let pin_sw = {
+            let config = esp::gpio::InputConfig::default().with_pull(esp::gpio::Pull::Up);
+            esp::gpio::Input::new(p.GPIO0, config)
+        };
+        let pin_led = {
+            esp::gpio::Output::new(p.GPIO4, esp::gpio::Level::Low, esp::gpio::OutputConfig::default())
+        };
         (pin_sw, pin_led)
     };
     let fut_blinky = blinky(pin_sw, pin_led);
@@ -42,7 +46,7 @@ async fn blinky(mut pin_sw: impl hal::digital::InputPin + hal_async::digital::Wa
         } else {
             pin_led.set_low().ok();
         }
-        pin_sw.wait_for_any_edge().await;
+        pin_sw.wait_for_any_edge().await.ok();
         time::Timer::after_millis(30).await;    // Debounce delay
     }
 }
