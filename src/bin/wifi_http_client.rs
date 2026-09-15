@@ -1,6 +1,3 @@
-//! This example uses the RP Pico W board Wifi chip (cyw43).
-//! Connects to specified Wifi network and creates a TCP endpoint on port 1234.
-
 #![no_std]
 #![no_main]
 
