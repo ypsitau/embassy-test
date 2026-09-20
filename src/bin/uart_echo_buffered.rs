@@ -14,9 +14,9 @@ rp::bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = rp::init(Default::default());
-    let uart_driver = {
-        let tx = p.PIN_0;
-        let rx = p.PIN_1;
+    let uart = {
+        let pin_tx = p.PIN_0;
+        let pin_rx = p.PIN_1;
         let tx_buffer = { // should be replaced by make_static macro when it becomes available
             const TX_BUFFER_SIZE: usize = 64;
             static STATIC_CELL: StaticCell<[u8; TX_BUFFER_SIZE]> = StaticCell::new();
@@ -28,9 +28,9 @@ async fn main(_spawner: Spawner) {
             STATIC_CELL.init([0u8; RX_BUFFER_SIZE])
         };
         let config = rp::uart::Config::default();
-        rp::uart::BufferedUart::new(p.UART0, tx, rx, Irqs, tx_buffer, rx_buffer, config)
+        rp::uart::BufferedUart::new(p.UART0, pin_tx, pin_rx, Irqs, tx_buffer, rx_buffer, config)
     };
-    let (uart_tx, uart_rx) = uart_driver.split();
+    let (uart_tx, uart_rx) = uart.split();
     run_session(uart_tx, uart_rx).await.unwrap();
 }
 

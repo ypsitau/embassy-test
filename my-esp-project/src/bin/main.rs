@@ -5,6 +5,7 @@ use embassy_executor::Spawner;
 use embassy_time as time;
 use embedded_hal_1 as hal;
 use embedded_hal_async as hal_async;
+
 use esp_backtrace as _;
 use esp_hal as esp;
 use esp_println::println as info;
@@ -28,25 +29,26 @@ async fn main(_spawner: Spawner) {
         };
         (pin_sw, pin_led)
     };
-    let fut_blinky = blinky(pin_sw, pin_led);
-    let fut_main = async {
-        loop {
-            info!("Bing!");
-            time::Timer::after_millis(5000).await;
-        }
-    };
-    embassy_futures::join::join(fut_main, fut_blinky).await;
+    let fut_task_pin_in_out = task_pin_in_out(pin_sw, pin_led);
+    fut_task_pin_in_out.await;
 }
 
-async fn blinky(mut pin_sw: impl hal::digital::InputPin + hal_async::digital::Wait, mut pin_led: impl hal::digital::OutputPin) {
+async fn task_pin_in_out<InputPin, OutputPin>(mut pin_sw: InputPin, mut pin_led: OutputPin)
+where
+    InputPin: hal::digital::InputPin + hal_async::digital::Wait,
+    OutputPin: hal::digital::OutputPin,
+{
+    info!("Starting task_pin_in_out");
     loop {
-        let is_pushed = pin_sw.is_low().unwrap_or(false);
+        let is_pushed = pin_sw.is_low().unwrap();
         if is_pushed {
+            info!("Button pressed");
             pin_led.set_high().ok();
         } else {
+            info!("Button released");
             pin_led.set_low().ok();
         }
         pin_sw.wait_for_any_edge().await.ok();
-        time::Timer::after_millis(30).await;    // Debounce delay
+        time::Timer::after_millis(30).await;    // debounce delay
     }
 }
