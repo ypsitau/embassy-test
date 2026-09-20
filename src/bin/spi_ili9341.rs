@@ -32,14 +32,25 @@ use embassy_rp as rp;
 //    emb::sync::blocking_mutex::raw::NoopRawMutex,
 //    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
 
+pub type MutexCriticalSection<T> =
+    emb::sync::blocking_mutex::Mutex<emb::sync::blocking_mutex::raw::CriticalSectionRawMutex, T>;
+pub type MutexNoop<T> =
+    emb::sync::blocking_mutex::Mutex<emb::sync::blocking_mutex::raw::NoopRawMutex, T>;
+pub type MutexThreadMode<T> =
+    emb::sync::blocking_mutex::Mutex<emb::sync::blocking_mutex::raw::ThreadModeRawMutex, T>;
+
+pub type ChannelCriticalSection<T, const N: usize> =
+    emb::sync::channel::Channel<emb::sync::blocking_mutex::raw::CriticalSectionRawMutex, T, N>;
+pub type ChannelNoop<T, const N: usize> =
+    emb::sync::channel::Channel<emb::sync::blocking_mutex::raw::NoopRawMutex, T, N>;
+pub type ChannelThreadMode<T, const N: usize> =
+    emb::sync::channel::Channel<emb::sync::blocking_mutex::raw::ThreadModeRawMutex, T, N>;
+
 #[emb::executor::main]
 async fn main(_spawner: emb::executor::Spawner) {
     let (spi_touch, spi_display, pin_display_reset, pin_display_dc) = {
         let p = rp::init(Default::default());
         let mutex_spi = {
-            type MutexSPI1 = emb::sync::blocking_mutex::Mutex<
-                emb::sync::blocking_mutex::raw::NoopRawMutex,
-                RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>>>;
             let pin_clk = p.PIN_10;
             let pin_mosi = p.PIN_11;
             let pin_miso = p.PIN_12;
@@ -47,9 +58,10 @@ async fn main(_spawner: emb::executor::Spawner) {
             //let tx_dma = p.DMA_CH0;
             //let rx_dma = p.DMA_CH1;
             //let spi = rp::spi::Spi::new(p.SPI1, pin_clk, pin_mosi, pin_miso, tx_dma, rx_dma, Irqs, config);
-            let spi = rp::spi::Spi::new_blocking(p.SPI1, pin_clk, pin_mosi, pin_miso, config);
-            static STATIC_CELL: StaticCell<MutexSPI1> = StaticCell::new();
-            STATIC_CELL.init(MutexSPI1::new(RefCell::new(spi)))
+            type SPI1 = rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>;
+            static STATIC_CELL: StaticCell<MutexNoop<RefCell<SPI1>>> = StaticCell::new();
+            STATIC_CELL.init(MutexNoop::new(RefCell::new(
+                SPI1::new_blocking(p.SPI1, pin_clk, pin_mosi, pin_miso, config))))
         };
         let spi_touch = {
             let pin_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
@@ -126,21 +138,20 @@ async fn task_main(spi_touch: impl hal::spi::SpiDevice, spi_display: impl hal::s
         Point::new(20, 200),
         text_style
     ).draw(&mut display).unwrap();
-    let channel = emb::sync::channel::Channel::<
-        emb::sync::blocking_mutex::raw::NoopRawMutex, (i32, i32), 16>::new();
+    let channel_pos: ChannelNoop<(i32, i32), 16> = ChannelNoop::new();
     let fut_main = async {
         let style_dot = eg::primitives::PrimitiveStyleBuilder::new()
             .fill_color(eg::pixelcolor::Rgb565::WHITE)
             .build();
         loop {
-            let (x, y) = channel.receive().await;
+            let (x, y) = channel_pos.receive().await;
             eg::primitives::Rectangle::new(
                 Point::new(x - 4, y - 4), Size::new(8, 8)
             ).into_styled(style_dot).draw(&mut display).unwrap();
         }
     };
     let fut_touch = touch.run_sampler(emb::time::Delay, 5, |pos| {
-        if let Some(pos) = pos { channel.try_send(pos).ok(); }
+        if let Some(pos) = pos { channel_pos.try_send(pos).ok(); }
     });
     emb::futures::join::join(fut_main, fut_touch).await;
 }
