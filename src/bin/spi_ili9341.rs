@@ -8,10 +8,10 @@ mod emb {
     pub use embassy_time as time;
 }
 
+use core::cell::RefCell;
 use embedded_hal_1 as hal;
 use embedded_graphics as eg;
 
-use core::cell::RefCell;
 use defmt::info;
 //use mipidsi::models::ST7789 as DisplayModel;
 use mipidsi::models::ILI9341Rgb565 as DisplayModel;
@@ -27,17 +27,20 @@ use embassy_rp as rp;
 //        rp::dma::InterruptHandler<rp::peripherals::DMA_CH0>,
 //        rp::dma::InterruptHandler<rp::peripherals::DMA_CH1>;
 //});
-//
-//type MutexSPI1 = emb::sync::blocking_mutex::Mutex<
-//    emb::sync::blocking_mutex::raw::NoopRawMutex,
-//    RefCell<rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Async>>>;
 
-pub type MutexCriticalSection<T> =
+pub type BlockingMutexCriticalSection<T> =
     emb::sync::blocking_mutex::Mutex<emb::sync::blocking_mutex::raw::CriticalSectionRawMutex, T>;
-pub type MutexNoop<T> =
+pub type BlockingMutexNoop<T> =
     emb::sync::blocking_mutex::Mutex<emb::sync::blocking_mutex::raw::NoopRawMutex, T>;
-pub type MutexThreadMode<T> =
+pub type BlockingMutexThreadMode<T> =
     emb::sync::blocking_mutex::Mutex<emb::sync::blocking_mutex::raw::ThreadModeRawMutex, T>;
+
+pub type AsyncMutexCriticalSection<T> =
+    emb::sync::mutex::Mutex<emb::sync::blocking_mutex::raw::CriticalSectionRawMutex, T>;
+pub type AsyncMutexNoop<T> =
+    emb::sync::mutex::Mutex<emb::sync::blocking_mutex::raw::NoopRawMutex, T>;
+pub type AsyncMutexThreadMode<T> =
+    emb::sync::mutex::Mutex<emb::sync::blocking_mutex::raw::ThreadModeRawMutex, T>;
 
 pub type ChannelCriticalSection<T, const N: usize> =
     emb::sync::channel::Channel<emb::sync::blocking_mutex::raw::CriticalSectionRawMutex, T, N>;
@@ -55,12 +58,9 @@ async fn main(_spawner: emb::executor::Spawner) {
             let pin_mosi = p.PIN_11;
             let pin_miso = p.PIN_12;
             let config = rp::spi::Config::default();
-            //let tx_dma = p.DMA_CH0;
-            //let rx_dma = p.DMA_CH1;
-            //let spi = rp::spi::Spi::new(p.SPI1, pin_clk, pin_mosi, pin_miso, tx_dma, rx_dma, Irqs, config);
             type SPI1 = rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>;
-            static STATIC_CELL: StaticCell<MutexNoop<RefCell<SPI1>>> = StaticCell::new();
-            STATIC_CELL.init(MutexNoop::new(RefCell::new(
+            static STATIC_CELL: StaticCell<BlockingMutexNoop<RefCell<SPI1>>> = StaticCell::new();
+            STATIC_CELL.init(BlockingMutexNoop::new(RefCell::new(
                 SPI1::new_blocking(p.SPI1, pin_clk, pin_mosi, pin_miso, config))))
         };
         let spi_touch = {

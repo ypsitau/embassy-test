@@ -2,7 +2,6 @@ use embedded_hal_async as hal_async;
 use embedded_hal_1 as hal;
 use embedded_graphics as eg;
 use embedded_graphics::prelude::*;
-use embedded_graphics::draw_target::DrawTarget;
 
 #[derive(Debug, Clone, Copy, defmt::Format)]
 pub struct Calibration {
@@ -62,9 +61,9 @@ impl<SpiDevice: hal::spi::SpiDevice> Builder<SpiDevice> {
         self.driver
     }
 }
-
 impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
-    pub async fn run_sampler(&mut self, mut delay: impl hal_async::delay::DelayNs, sampling_delay: u32, mut on_pos_updated: impl FnMut(Option<(i32, i32)>)) {
+    pub async fn run_sampler(&mut self, mut delay: impl hal_async::delay::DelayNs,
+            sampling_delay: u32, mut on_pos_updated: impl FnMut(Option<(i32, i32)>)) {
         const NUM_SAMPLES: usize = 6;
         let mut xraw_hist = heapless::HistoryBuf::<u16, NUM_SAMPLES>::new();
         let mut yraw_hist = heapless::HistoryBuf::<u16, NUM_SAMPLES>::new();
@@ -128,7 +127,8 @@ impl<SpiDevice: hal::spi::SpiDevice> Driver<SpiDevice> {
 }
 
 pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
-        touch: &mut Driver<impl hal::spi::SpiDevice>, display: &mut impl DrawTarget<Color = Color>,
+        touch: &mut Driver<impl hal::spi::SpiDevice>,
+        display: &mut impl eg::draw_target::DrawTarget<Color = Color>,
         mut delay: impl hal_async::delay::DelayNs,
         color: Color, color_bg: Color) -> Option<Calibration> {
     const DISTANCE_FROM_EDGE: i32 = 20;
@@ -161,7 +161,8 @@ pub async fn calibrate<Color: eg::pixelcolor::PixelColor>(
     Some(Calibration { xraw_left, xraw_right, yraw_top, yraw_bottom, })
 }
 
-fn draw_cross<Color: eg::pixelcolor::PixelColor>(display: &mut impl DrawTarget<Color = Color>, x: i32, y: i32, color: Color) {
+fn draw_cross<Color: eg::pixelcolor::PixelColor>(
+        display: &mut impl eg::draw_target::DrawTarget<Color = Color>, x: i32, y: i32, color: Color) {
     const CROSS_SIZE: i32 = 10;
     const CROSS_THICKNESS: u32 = 4;
     eg::primitives::Line::new(Point::new(x - CROSS_SIZE, y), Point::new(x + CROSS_SIZE, y))
