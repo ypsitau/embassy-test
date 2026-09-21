@@ -48,7 +48,7 @@ pub type ChannelThreadMode<T, const N: usize> =
 
 #[emb::executor::main]
 async fn main(_spawner: emb::executor::Spawner) {
-    let (spi_touch, spi_display, pin_display_reset, pin_display_dc) = {
+    let (spi_touch, spi_display, pin_display_reset, pin_display_dc, _pin_display_bl) = {
         let p = rp::init(Default::default());
         let mutex_spi = {
             let pin_clk = p.PIN_10;
@@ -82,11 +82,8 @@ async fn main(_spawner: emb::executor::Spawner) {
         };
         let pin_display_reset = rp::gpio::Output::new(p.PIN_6, rp::gpio::Level::Low);
         let pin_display_dc = rp::gpio::Output::new(p.PIN_7, rp::gpio::Level::Low);
-        let _pin_display_bl = {
-            static STATIC_CELL: StaticCell<rp::gpio::Output<'static>> = StaticCell::new();
-            STATIC_CELL.init(rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High));
-        };
-        (spi_touch, spi_display, pin_display_reset, pin_display_dc)
+        let pin_display_bl = rp::gpio::Output::new(p.PIN_9, rp::gpio::Level::High);
+        (spi_touch, spi_display, pin_display_reset, pin_display_dc, pin_display_bl)
     };
     let fut_task_main = task_main(spi_touch, spi_display, pin_display_reset, pin_display_dc);
     fut_task_main.await;
