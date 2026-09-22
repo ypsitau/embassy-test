@@ -57,11 +57,10 @@ async fn main(_spawner: emb::executor::Spawner) {
             let pin_clk = p.PIN_10;
             let pin_mosi = p.PIN_11;
             let pin_miso = p.PIN_12;
-            let config = rp::spi::Config::default();
             type SPI1 = rp::spi::Spi<'static, rp::peripherals::SPI1, rp::spi::Blocking>;
             static STATIC_CELL: StaticCell<BlockingMutexNoop<RefCell<SPI1>>> = StaticCell::new();
             STATIC_CELL.init(BlockingMutexNoop::new(RefCell::new(
-                SPI1::new_blocking(p.SPI1, pin_clk, pin_mosi, pin_miso, config))))
+                SPI1::new_blocking(p.SPI1, pin_clk, pin_mosi, pin_miso, Default::default()))))
         };
         let spi_touch = {
             let pin_cs = rp::gpio::Output::new(p.PIN_14, rp::gpio::Level::High);
